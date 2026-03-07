@@ -1,0 +1,155 @@
+{
+  "timestamp": 1772556156352,
+  "image_point_start": [
+    167,
+    209
+  ],
+  "image_point_end": [
+    634,
+    191
+  ],
+  "lidar_angle_min": -12.984375,
+  "lidar_angle_max": 21.625,
+  "lidar_points_count": 23,
+  "avg_distance": 795.5978260869565,
+  "mapped_points": [
+    {
+      "angle": -12.984375,
+      "distance": 819.25,
+      "pixel_x": 167,
+      "pixel_y": 209
+    },
+    {
+      "angle": -11.59375,
+      "distance": 813.75,
+      "pixel_x": 185,
+      "pixel_y": 208
+    },
+    {
+      "angle": -6.84375,
+      "distance": 801.5,
+      "pixel_x": 249,
+      "pixel_y": 205
+    },
+    {
+      "angle": -5.421875,
+      "distance": 794.25,
+      "pixel_x": 269,
+      "pixel_y": 205
+    },
+    {
+      "angle": -4.203125,
+      "distance": 791.0,
+      "pixel_x": 285,
+      "pixel_y": 204
+    },
+    {
+      "angle": -2.796875,
+      "distance": 791.25,
+      "pixel_x": 304,
+      "pixel_y": 203
+    },
+    {
+      "angle": -1.40625,
+      "distance": 791.25,
+      "pixel_x": 323,
+      "pixel_y": 202
+    },
+    {
+      "angle": 0.046875,
+      "distance": 786.5,
+      "pixel_x": 342,
+      "pixel_y": 202
+    },
+    {
+      "angle": 1.375,
+      "distance": 782.25,
+      "pixel_x": 360,
+      "pixel_y": 201
+    },
+    {
+      "angle": 2.78125,
+      "distance": 781.5,
+      "pixel_x": 379,
+      "pixel_y": 200
+    },
+    {
+      "angle": 4.09375,
+      "distance": 782.5,
+      "pixel_x": 397,
+      "pixel_y": 200
+    },
+    {
+      "angle": 5.359375,
+      "distance": 782.75,
+      "pixel_x": 414,
+      "pixel_y": 199
+    },
+    {
+      "angle": 6.75,
+      "distance": 784.25,
+      "pixel_x": 433,
+      "pixel_y": 198
+    },
+    {
+      "angle": 8.140625,
+      "distance": 784.5,
+      "pixel_x": 452,
+      "pixel_y": 198
+    },
+    {
+      "angle": 9.453125,
+      "distance": 785.75,
+      "pixel_x": 469,
+      "pixel_y": 197
+    },
+    {
+      "angle": 10.84375,
+      "distance": 788.5,
+      "pixel_x": 488,
+      "pixel_y": 196
+    },
+    {
+      "angle": 12.15625,
+      "distance": 790.25,
+      "pixel_x": 506,
+      "pixel_y": 195
+    },
+    {
+      "angle": 13.59375,
+      "distance": 793.75,
+      "pixel_x": 525,
+      "pixel_y": 195
+    },
+    {
+      "angle": 14.8125,
+      "distance": 799.75,
+      "pixel_x": 542,
+      "pixel_y": 194
+    },
+    {
+      "angle": 17.5625,
+      "distance": 808.25,
+      "pixel_x": 579,
+      "pixel_y": 193
+    },
+    {
+      "angle": 19.0,
+      "distance": 811.5,
+      "pixel_x": 598,
+      "pixel_y": 192
+    },
+    {
+      "angle": 20.234375,
+      "distance": 813.75,
+      "pixel_x": 615,
+      "pixel_y": 191
+    },
+    {
+      "angle": 21.625,
+      "distance": 820.75,
+      "pixel_x": 634,
+      "pixel_y": 191
+    }
+  ]
+}
