@@ -6,6 +6,15 @@ __pycache__/
 ~$*
 *.tmp
 
+# Documents & slides (keep local only)
+*.docx
+*.pptx
+*.pdf
+giai_thich.txt
+gt.txt
+main.txt
+paper_section_B.txt
+
 # Large binary outputs (regeneratable)
 calibration_result.npz
 lidar_data.csv
