@@ -102,8 +102,10 @@ def main():
 
     color_dir = os.path.join(SAVE_DIR, "color")
     depth_dir = os.path.join(SAVE_DIR, "depth")
+    depth_cm_dir = os.path.join(SAVE_DIR, "depth_colormap")
     os.makedirs(color_dir, exist_ok=True)
     os.makedirs(depth_dir, exist_ok=True)
+    os.makedirs(depth_cm_dir, exist_ok=True)
     
     # load calibration
     H = load_calibration()
@@ -178,6 +180,7 @@ def main():
                 ts = int(time.time() * 1000)
                 cv2.imwrite(os.path.join(color_dir, f"rgb_lidar_{ts}.png"), frame_rgb)
                 cv2.imwrite(os.path.join(depth_dir, f"depth_lidar_{ts}.png"), frame_depth)
+                cv2.imwrite(os.path.join(depth_cm_dir, f"depth_colormap_{ts}.png"), depth_colormap)
                 print(f"[{save_count}] Saved to {SAVE_DIR}/ (ts={ts})")
             elif key == ord('q'):
                 break
