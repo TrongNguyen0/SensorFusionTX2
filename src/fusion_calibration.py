@@ -103,9 +103,8 @@ def main():
     color_dir = os.path.join(SAVE_DIR, "color")
     depth_dir = os.path.join(SAVE_DIR, "depth")
     depth_cm_dir = os.path.join(SAVE_DIR, "depth_colormap")
-    os.makedirs(color_dir, exist_ok=True)
-    os.makedirs(depth_dir, exist_ok=True)
-    os.makedirs(depth_cm_dir, exist_ok=True)
+    for d in (color_dir, depth_dir, depth_cm_dir):
+        os.makedirs(d, exist_ok=True)
     
     # load calibration
     H = load_calibration()
@@ -136,12 +135,13 @@ def main():
                 continue
 
             color_img = np.asanyarray(color_frame.get_data())
-            depth_colormap = cv2.applyColorMap(
-                cv2.convertScaleAbs(np.asanyarray(depth_frame.get_data()), alpha=0.03),
-                cv2.COLORMAP_JET
-            )
+            depth_data = np.asanyarray(depth_frame.get_data())
+            depth_gray = cv2.convertScaleAbs(depth_data, alpha=0.03)
+            depth_colormap = cv2.applyColorMap(depth_gray, cv2.COLORMAP_JET)
+
             frame_rgb = color_img.copy()
-            frame_depth = depth_colormap.copy()
+            frame_depth = cv2.cvtColor(depth_gray, cv2.COLOR_GRAY2BGR)
+            frame_depth_cm = depth_colormap.copy()
 
             # get current lidar scan
             with scan_lock:
@@ -160,18 +160,19 @@ def main():
                     color = dist_to_color(dist)
                     cv2.circle(frame_rgb, (u, v), 4, color, -1)
                     cv2.circle(frame_depth, (u, v), 4, color, -1)
+                    cv2.circle(frame_depth_cm, (u, v), 4, color, -1)
                     count += 1
 
             info = f"LiDAR: {count}/{len(scan)}"
             hint = "s: save | q: quit"
-            for img in (frame_rgb, frame_depth):
+            for img in (frame_rgb, frame_depth, frame_depth_cm):
                 cv2.putText(img, info, (10, 25),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
                 cv2.putText(img, hint, (10, 470),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
 
             # combine side by side in one window
-            combined = np.hstack((frame_rgb, frame_depth))
+            combined = np.hstack((frame_rgb, frame_depth_cm))
             cv2.imshow("LiDAR Fusion | RGB - Depth", combined)
 
             key = cv2.waitKey(1) & 0xFF
@@ -180,7 +181,7 @@ def main():
                 ts = int(time.time() * 1000)
                 cv2.imwrite(os.path.join(color_dir, f"rgb_lidar_{ts}.png"), frame_rgb)
                 cv2.imwrite(os.path.join(depth_dir, f"depth_lidar_{ts}.png"), frame_depth)
-                cv2.imwrite(os.path.join(depth_cm_dir, f"depth_colormap_{ts}.png"), depth_colormap)
+                cv2.imwrite(os.path.join(depth_cm_dir, f"depth_colormap_{ts}.png"), frame_depth_cm)
                 print(f"[{save_count}] Saved to {SAVE_DIR}/ (ts={ts})")
             elif key == ord('q'):
                 break
