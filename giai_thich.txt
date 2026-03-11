@@ -93,7 +93,8 @@ def normalize_angle(angle):
 
 
 def filter_scan(scan_data):
-  Chức năng: Lọc dữ liệu quét LiDAR, chỉ giữ lại các điểm nằm trong phạm vi -90 đến +90 độ (phía trước cảm biến, trùng hướng nhìn camera).
+  Chức năng: Lọc dữ liệu quét LiDAR, chỉ giữ lại các điểm nằm trong phạm vi -90 đến +90 độ (phía trước cảm biến, 
+  trùng hướng nhìn camera).
 
   filtered = []
     Tạo danh sách rỗng để chứa kết quả sau khi lọc.
@@ -155,7 +156,8 @@ def init_plot():
   ax.set_thetamin(-90) và ax.set_thetamax(90)
     Chỉ hiển thị phạm vi -90 đến +90 độ (nửa trước).
   line, = ax.plot([], [], 'b.', markersize=1)
-    Tạo một "đường vẽ" rỗng với các chấm xanh dương cỡ 1px. Dấu phẩy sau "line" là cú pháp Python để lấy phần tử đầu tiên từ danh sách (vì plot trả về danh sách).
+    Tạo một "đường vẽ" rỗng với các chấm xanh dương cỡ 1px. Dấu phẩy sau "line" là cú pháp Python để lấy phần tử đầu tiên
+    từ danh sách (vì plot trả về danh sách).
   fig.canvas.manager.window.wm_geometry("+50+50")
     Di chuyển cửa sổ biểu đồ đến vị trí (50px từ trái, 50px từ trên) trên màn hình.
 
@@ -173,7 +175,8 @@ def init_csv(file_name):
 
 def lidar_thread(lidar):
   Chức năng: Hàm chạy trên thread riêng, liên tục đọc dữ liệu từ LiDAR và cập nhật biến latest_filtered.
-  Lý do tách thread: Nếu không tách, khi chương trình đang chờ người dùng click chuột, LiDAR sẽ ngừng đọc và biểu đồ polar sẽ đứng im.
+  Lý do tách thread: Nếu không tách, khi chương trình đang chờ người dùng click chuột, LiDAR sẽ ngừng đọc 
+  và biểu đồ polar sẽ đứng im.
 
   global latest_filtered, lidar_running
     Khai báo sẽ thay đổi 2 biến toàn cục này.
@@ -195,7 +198,8 @@ def get_scan():
   with scan_lock:
     Khóa lại trước khi đọc.
   return list(latest_filtered)
-    Trả về bản sao (list mới) chứ không trả về chính danh sách gốc. Tránh trường hợp main thread đang dùng thì LiDAR thread ghi đè.
+    Trả về bản sao (list mới) chứ không trả về chính danh sách gốc. Tránh trường hợp main thread đang dùng 
+    thì LiDAR thread ghi đè.
 
 
 def update_polar(ax, line, fig, count):
@@ -244,7 +248,9 @@ def mouse_cb(event, x, y, flags, param):
 
 
 def select_bar_points(scan_data, polar_ax, polar_line, polar_fig, count):
-  Chức năng: Hiển thị biểu đồ scatter (biểu đồ phân tán) của các điểm LiDAR. Cho phép người dùng click chọn điểm đầu và điểm cuối của thanh trắng trên dữ liệu LiDAR. Polar plot vẫn tiếp tục cập nhật trong lúc chờ.
+  Chức năng: Hiển thị biểu đồ scatter (biểu đồ phân tán) của các điểm LiDAR. 
+  Cho phép người dùng click chọn điểm đầu và điểm cuối của thanh trắng trên dữ liệu LiDAR. 
+  Polar plot vẫn tiếp tục cập nhật trong lúc chờ.
 
   angles = [a for _, a, _ in scan_data]
   dists = [d for _, _, d in scan_data]
@@ -271,7 +277,8 @@ def select_bar_points(scan_data, polar_ax, polar_line, polar_fig, count):
 
     Vòng for tìm điểm LiDAR gần nhất với vị trí click:
       dist_sq = ((a - event.xdata) / a_range)**2 + ((d - event.ydata) / d_range)**2
-        Tính "khoảng cách chuẩn hóa" giữa mỗi điểm LiDAR và vị trí click. Chia cho range để 2 trục (góc và khoảng cách) có cùng tỷ lệ, không bị lệch.
+        Tính "khoảng cách chuẩn hóa" giữa mỗi điểm LiDAR và vị trí click. 
+        Chia cho range để 2 trục (góc và khoảng cách) có cùng tỷ lệ, không bị lệch.
 
     ax2.scatter(..., marker='x', linewidths=3)
       Vẽ dấu X to tại điểm được chọn. Xanh lá cho P1, đỏ cho P2.
@@ -349,7 +356,8 @@ def select_image_points(color_img, polar_ax, polar_line, polar_fig, count):
 
 def map_lidar_to_image(bar_points, p1, p2):
   Chức năng: Ánh xạ (mapping) các điểm LiDAR thuộc thanh trắng sang tọa độ pixel trên ảnh.
-  Nguyên lý: Nội suy tuyến tính. Điểm LiDAR có góc nhỏ nhất ứng với P1 (đầu trái), góc lớn nhất ứng với P2 (đầu phải). Các điểm ở giữa được chia đều.
+  Nguyên lý: Nội suy tuyến tính. Điểm LiDAR có góc nhỏ nhất ứng với P1 (đầu trái), 
+              góc lớn nhất ứng với P2 (đầu phải). Các điểm ở giữa được chia đều.
 
   min_a = min(angles)
   max_a = max(angles)

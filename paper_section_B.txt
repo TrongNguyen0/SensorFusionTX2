@@ -1,51 +1,61 @@
-B. Sensor Calibration
+B. Hiệu chuẩn cảm biến (Sensor Calibration)
 
-1) Tổng quan phương pháp
+1) Phát biểu bài toán
 
-Quá trình hiệu chuẩn (calibration) giữa RPLIDAR A1M8 và Intel RealSense D435 được thực hiện nhằm xác định phép biến đổi hình học từ hệ tọa độ cực của LiDAR sang hệ tọa độ pixel của camera. Do RPLIDAR A1M8 là cảm biến LiDAR 2D, dữ liệu quét chỉ nằm trên một mặt phẳng ngang duy nhất. Camera D435 cung cấp ảnh màu RGB kèm ảnh độ sâu (depth) với độ phân giải 640×480 pixel ở tần số 30 Hz. Hai cảm biến này hoạt động trên hai hệ tọa độ và nguyên lý đo hoàn toàn khác nhau, do đó cần một bước hiệu chuẩn để thiết lập sự tương ứng giữa chúng.
+Trong hệ thống đề xuất, hai cảm biến RPLIDAR A1M8 và Intel RealSense D435 được gắn cố định trên cùng một giá đỡ cứng, cùng hướng về phía trước. RPLIDAR A1M8 là cảm biến LiDAR quét 2D, hoạt động trên mặt phẳng ngang duy nhất, trả về dữ liệu dưới dạng tọa độ cực gồm góc quét θ (đơn vị độ) và khoảng cách d (đơn vị milimet). Camera D435 cung cấp đồng thời luồng ảnh màu RGB và luồng ảnh độ sâu (depth) với độ phân giải 640×480 pixel ở tần số 30 khung hình/giây. Vì hai cảm biến vận hành trên hai hệ tọa độ khác nhau — hệ cực cho LiDAR và hệ pixel cho camera — nên cần xác định một phép biến đổi hình học cho phép ánh xạ dữ liệu từ không gian LiDAR sang không gian ảnh camera. Bài toán này được gọi là hiệu chuẩn ngoại (extrinsic calibration) giữa hai cảm biến.
 
-Phương pháp hiệu chuẩn được xây dựng dựa trên nguyên tắc tương ứng điểm (point correspondence): sử dụng một đối tượng tham chiếu chung (thanh phẳng có bề mặt phản xạ tốt) mà cả LiDAR và camera đều quan sát được đồng thời. Từ các cặp điểm tương ứng thu được, hệ thống ước lượng ma trận biến đổi bằng ba phương pháp: Homography, Perspective-n-Point (PnP) và Affine Transform, sau đó chọn phương pháp cho sai số tái chiếu (reprojection error) thấp nhất.
+Cách tiếp cận ở đây dựa trên nguyên tắc tương ứng điểm: sử dụng một đối tượng tham chiếu chung — cụ thể là một thanh phẳng có bề mặt phản xạ tốt — để cả LiDAR lẫn camera cùng quan sát đồng thời. Từ các cặp điểm tương ứng thu thập được qua nhiều lần đo ở các vị trí khác nhau, hệ thống ước lượng ma trận Homography H kích thước 3×3 bằng thuật toán RANSAC. Ma trận H cho phép chiếu trực tiếp từ tọa độ Descartes 2D của LiDAR sang tọa độ pixel trên mặt phẳng ảnh camera.
 
-2) Thiết lập và chuẩn bị dữ liệu
+2) Thu thập dữ liệu hiệu chuẩn
 
-RPLIDAR A1M8 và camera D435 được gắn cố định trên cùng một giá đỡ, hướng về phía trước. LiDAR kết nối qua cổng COM3 với baudrate 115200, camera kết nối qua USB 3.0. Cả hai luồng ảnh color (định dạng BGR8) và depth (định dạng Z16) của camera đều được căn chỉnh (align) theo luồng color thông qua hàm rs.align() của thư viện pyrealsense2, đảm bảo mỗi pixel trên ảnh depth tương ứng chính xác với pixel trên ảnh màu.
+Về mặt phần cứng, LiDAR kết nối với máy tính qua cổng nối tiếp COM3 ở tốc độ truyền 115200 baud, camera kết nối qua giao tiếp USB 3.0. Hai luồng ảnh color (định dạng BGR8) và depth (định dạng Z16) của camera được căn chỉnh không gian (spatial alignment) theo luồng color nhờ hàm rs.align() trong thư viện pyrealsense2, nhằm đảm bảo mỗi pixel trên ảnh depth tương ứng một-một với pixel trên ảnh màu.
 
-Dữ liệu LiDAR được đọc liên tục trên một luồng xử lý riêng (thread) để không làm gián đoạn giao diện người dùng. Mỗi vòng quét, cảm biến trả về danh sách các điểm dưới dạng (chất lượng, góc, khoảng cách). Góc quét gốc nằm trong dải 0°–360° và được chuẩn hóa về dải −180° đến +180° bằng phép trừ 360° cho các góc lớn hơn 180°. Chỉ các điểm nằm trong phạm vi −90° đến +90° (tương ứng vùng nhìn phía trước trùng với trường nhìn camera) và có khoảng cách lớn hơn 0 mới được giữ lại. Dữ liệu sau lọc được sắp xếp theo góc tăng dần.
+Để tránh nghẽn giao diện người dùng, dữ liệu LiDAR được đọc liên tục trên một luồng nền (daemon thread) riêng biệt. Mỗi vòng quét, cảm biến trả về danh sách các điểm dạng bộ ba (chất lượng, góc, khoảng cách). Góc quét gốc nằm trong khoảng 0° đến 360°; hệ thống chuẩn hóa về dải −180° đến +180° bằng phép trừ 360° đối với các góc lớn hơn 180°. Sau đó, chỉ giữ lại các điểm có góc trong phạm vi ±90° — tương ứng vùng nhìn phía trước, trùng với trường quan sát của camera — và có khoảng cách dương. Tập điểm sau lọc được sắp xếp theo góc tăng dần.
 
-Quy trình thu thập dữ liệu calibration diễn ra như sau. Một thanh phẳng được đặt trước cả hai cảm biến ở các khoảng cách và vị trí khác nhau. Khi nhấn phím kích hoạt, hệ thống chụp đồng thời một cặp ảnh (color và depth đã align) từ camera, đồng thời lấy bản sao dữ liệu quét LiDAR hiện tại. Người vận hành chọn hai điểm đầu mút của thanh trên biểu đồ phân tán (scatter plot) hiển thị dữ liệu LiDAR — thao tác này xác định phạm vi góc chứa các điểm thuộc thanh, loại bỏ các điểm nhiễu từ môi trường xung quanh. Tiếp theo, người vận hành chọn hai điểm đầu mút tương ứng của thanh trên ảnh RGB. Từ đó, hệ thống thực hiện nội suy tuyến tính (linear interpolation) để ánh xạ từng điểm LiDAR trên thanh sang tọa độ pixel: với mỗi điểm LiDAR có góc θ, tỷ lệ t được tính theo công thức
+Quy trình thu thập diễn ra theo các bước sau. Người vận hành đặt thanh tham chiếu trước cả hai cảm biến, sau đó nhấn phím kích hoạt. Hệ thống lập tức chụp một cặp ảnh (color và depth đã align) từ camera, đồng thời sao chép dữ liệu quét LiDAR hiện tại. Tiếp theo, trên biểu đồ phân tán (scatter plot) hiển thị toàn bộ điểm LiDAR, người vận hành click chọn hai điểm đầu mút của thanh. Thuật toán tìm điểm gần nhất (nearest neighbor) sử dụng khoảng cách Euclidean chuẩn hóa — chia sai lệch trên mỗi trục cho biên độ của trục đó — để đảm bảo hai trục góc và khoảng cách có trọng số cân bằng, tránh trục có đơn vị lớn hơn chi phối kết quả. Thao tác này xác định dải góc chứa các điểm thuộc thanh, tách biệt chúng khỏi nhiễu môi trường xung quanh.
+
+Sau khi chọn thanh trên LiDAR, người vận hành tiếp tục chọn hai điểm đầu mút tương ứng trên ảnh RGB. Hệ thống thực hiện nội suy tuyến tính để ghép nối từng điểm LiDAR trên thanh với tọa độ pixel. Cụ thể, với mỗi điểm có góc θ, tỷ lệ nội suy t được tính:
 
     t = (θ − θ_min) / (θ_max − θ_min)
 
-trong đó θ_min và θ_max là góc nhỏ nhất và lớn nhất trong dãy điểm thuộc thanh. Tọa độ pixel tương ứng (u, v) được nội suy trên đoạn thẳng P1–P2:
+trong đó θ_min, θ_max lần lượt là góc nhỏ nhất và lớn nhất của dãy điểm thuộc thanh. Tọa độ pixel (u, v) tương ứng nằm trên đoạn thẳng nối hai điểm P₁ và P₂ đã chọn trên ảnh:
 
-    u = u_1 + t × (u_2 − u_1)
-    v = v_1 + t × (v_2 − v_1)
+    u = u₁ + t × (u₂ − u₁)
+    v = v₁ + t × (v₂ − v₁)
 
-Mỗi lần thu thập tạo ra một tập hợp các cặp điểm {(θ_i, d_i) ↔ (u_i, v_i)}. Quy trình được lặp lại nhiều lần ở các khoảng cách và góc đặt khác nhau (trong các thử nghiệm thực tế, dữ liệu thu được tại khoảng cách từ 780 mm đến 1190 mm, với phạm vi góc quét từ −86° đến +22°). Toàn bộ dữ liệu được lưu dưới dạng file JSON kèm ảnh color, depth và depth colormap.
+Mỗi lần thu thập sinh ra một tập các cặp điểm {(θᵢ, dᵢ) ↔ (uᵢ, vᵢ)}. Quy trình được lặp lại nhiều lần với thanh đặt ở các khoảng cách và góc khác nhau nhằm phủ rộng không gian hiệu chuẩn. Toàn bộ dữ liệu — bao gồm các cặp điểm, ảnh color, ảnh depth và ảnh depth dạng colormap — được lưu dưới định dạng JSON và PNG.
 
-3) Thuật toán và quá trình xử lý
+3) Ước lượng ma trận Homography
 
-Trước khi tính toán ma trận biến đổi, hệ thống gom tất cả các file JSON đã thu thập và chuyển đổi từng điểm LiDAR từ tọa độ cực (θ, d) sang tọa độ Descartes (x, z) theo công thức:
+Ở giai đoạn tính toán, hệ thống đọc toàn bộ các tập tin JSON đã thu thập và chuyển đổi mỗi điểm LiDAR từ tọa độ cực (θ, d) sang tọa độ Descartes (x, z):
 
     x = d × sin(θ)
     z = d × cos(θ)
 
-trong đó x là thành phần ngang và z là thành phần sâu (hướng phía trước cảm biến). Phép chuyển đổi này đưa dữ liệu LiDAR về không gian Descartes 2D, phù hợp cho các phép biến đổi hình học tiếp theo.
+Ở đây x là thành phần ngang (dương sang phải, âm sang trái) và z là thành phần theo hướng phía trước cảm biến. Phép chuyển đổi này đưa dữ liệu LiDAR về một không gian Descartes 2D, phù hợp cho ước lượng phép biến đổi hình chiếu phẳng.
 
-Hệ thống tính toán hiệu chuẩn bằng ba phương pháp độc lập:
+Phép biến đổi Homography mô hình hóa quan hệ phối cảnh (projective transformation) giữa hai mặt phẳng. Ma trận H kích thước 3×3 được định nghĩa sao cho:
 
-Phương pháp Homography: Tìm ma trận H kích thước 3×3 thỏa mãn quan hệ [u, v, 1]^T ∝ H × [x, z, 1]^T. Ma trận H được ước lượng bằng hàm cv2.findHomography() với thuật toán RANSAC (Random Sample Consensus) và ngưỡng sai số 5.0 pixel. RANSAC cho phép loại bỏ các điểm ngoại lai (outlier) bằng cách lặp đi lặp lại việc chọn ngẫu nhiên tập con điểm, ước lượng mô hình, và đánh giá sự phù hợp trên toàn bộ tập dữ liệu. Phương pháp này yêu cầu tối thiểu 4 cặp điểm và có khả năng mô hình hóa phép biến đổi phối cảnh (perspective).
+    s ⎡u⎤       ⎡x⎤
+      ⎢v⎥ = H × ⎢z⎥
+      ⎣1⎦       ⎣1⎦
 
-Phương pháp Perspective-n-Point (PnP): Điểm LiDAR 2D được mở rộng thành điểm 3D [x, 0, z] (với y = 0 do LiDAR quét trên mặt phẳng ngang), đơn vị chuyển từ mm sang mét. Kết hợp với ma trận nội tại (intrinsic matrix) K của camera — bao gồm tiêu cự (f_x, f_y) và tâm quang học (c_x, c_y) — hàm cv2.solvePnP() tìm vector xoay (rotation vector) và vector tịnh tiến (translation vector) mô tả vị trí tương đối giữa hai cảm biến. Ma trận nội tại K được trích xuất trực tiếp từ camera RealSense D435 qua API pyrealsense2; trong trường hợp camera không khả dụng tại thời điểm tính toán, hệ thống sử dụng giá trị mặc định của D435 ở độ phân giải 640×480 (f_x ≈ f_y ≈ 615, c_x ≈ 320, c_y ≈ 240). Vector xoay Rodrigues 3 chiều sau đó được chuyển thành ma trận xoay R (3×3) thông qua hàm cv2.Rodrigues(). Phương pháp này thử hai biến thể: SOLVEPNP_ITERATIVE và SOLVEPNP_SQPNP, sau đó chọn nghiệm có sai số tái chiếu thấp hơn.
+trong đó s là hệ số tỷ lệ. Tọa độ pixel thực tế thu được bằng phép chia đồng nhất: gọi kết quả phép nhân là vector (p₁, p₂, p₃), thì u = p₁/p₃ và v = p₂/p₃.
 
-Phương pháp Affine Transform: Tìm ma trận A kích thước 2×3 thỏa mãn [u, v]^T = A × [x, z, 1]^T. Ma trận A được ước lượng bằng cv2.estimateAffine2D() với RANSAC. Phương pháp này chỉ yêu cầu tối thiểu 3 cặp điểm, ổn định với tập dữ liệu nhỏ, phù hợp khi số lần thu thập còn hạn chế.
+Ma trận H được ước lượng bằng hàm cv2.findHomography() kết hợp thuật toán RANSAC (Random Sample Consensus) với ngưỡng sai số 5,0 pixel. Ở mỗi vòng lặp, RANSAC chọn ngẫu nhiên 4 cặp điểm, ước lượng ma trận H tạm thời, rồi đếm số điểm có sai số tái chiếu dưới ngưỡng (gọi là inlier). Sau nhiều vòng lặp, mô hình có tỷ lệ inlier cao nhất được giữ lại. Nhờ cơ chế này, các cặp điểm ngoại lai (outlier) do sai sót khi chọn thủ công hoặc do nhiễu cảm biến không ảnh hưởng đến kết quả cuối cùng. Yêu cầu tối thiểu là 4 cặp điểm tương ứng.
 
-Sau khi cả ba phương pháp hoàn tất, hệ thống so sánh sai số tái chiếu trung bình (mean reprojection error) và tự động chọn phương pháp có giá trị thấp nhất. Kết quả được lưu vào file .npz chứa đầy đủ các ma trận (H, R, T, A), thông số camera (K, hệ số méo), tên phương pháp tối ưu và sai số tương ứng.
+Lý do lựa chọn Homography thay vì các phương pháp khác như sau. Do LiDAR quét 2D chỉ cung cấp tọa độ trên một mặt phẳng (x, z), bài toán hiệu chuẩn thực chất là ánh xạ giữa hai không gian phẳng — phù hợp tự nhiên với mô hình Homography. Phương pháp Perspective-n-Point (PnP) đòi hỏi tọa độ 3D đầu vào; nếu mở rộng nhân tạo bằng cách gán y = 0, tập điểm trở nên đồng phẳng, khiến bài toán PnP suy biến và nghiệm kém ổn định. Phép biến đổi Affine chỉ có 6 bậc tự do, không mô hình hóa được hiệu ứng phối cảnh, dẫn đến sai số tích lũy khi dữ liệu trải trên nhiều khoảng cách. Ngược lại, Homography sở hữu 8 bậc tự do, đủ để biểu diễn các biến dạng phối cảnh mà vẫn chỉ cần lượng dữ liệu vừa phải.
 
-4) Kiểm tra và xác thực
+Kết quả cuối cùng — gồm ma trận H, sai số tái chiếu trung bình và tổng số cặp điểm — được ghi vào tập tin định dạng .npz để sử dụng ở giai đoạn fusion.
 
-Độ chính xác của hiệu chuẩn được đánh giá thông qua sai số tái chiếu (reprojection error). Với mỗi phương pháp, hệ thống chiếu ngược tất cả các điểm LiDAR qua ma trận đã ước lượng để thu được tọa độ pixel dự đoán, sau đó tính khoảng cách Euclidean giữa pixel dự đoán và pixel thực tế (ground truth). Các chỉ số thống kê được báo cáo gồm: sai số trung bình (mean), trung vị (median), giá trị lớn nhất (max) và độ lệch chuẩn (standard deviation).
+4) Đánh giá và xác thực
 
-Kết quả được trực quan hóa bằng cách chồng lên ảnh RGB từ camera: các chấm xanh lá biểu thị vị trí pixel ground truth (do người vận hành chỉ định), các chấm đỏ biểu thị vị trí pixel dự đoán của phương pháp Homography, và các chấm vàng biểu thị kết quả Affine. Nếu các chấm dự đoán nằm sát với ground truth, phép hiệu chuẩn đạt chất lượng tốt. Trong các thử nghiệm thực tế với 6 lần thu thập tại các vị trí khác nhau (khoảng cách 780 mm đến 1190 mm), tổng cộng thu được hơn 100 cặp điểm tương ứng.
+Chất lượng hiệu chuẩn được đánh giá định lượng thông qua sai số tái chiếu (reprojection error). Với mỗi điểm LiDAR, hệ thống tính tọa độ pixel dự đoán bằng cách nhân vector [x, z, 1] với ma trận H, sau đó so sánh với tọa độ pixel thực tế (ground truth) bằng khoảng cách Euclidean:
 
-Bước xác thực cuối cùng được thực hiện ở chế độ fusion thời gian thực: toàn bộ các điểm LiDAR trong vùng quét ±90° được chiếu lên ảnh camera liên tục theo từng khung hình bằng ma trận hiệu chuẩn đã chọn. Mỗi điểm được tô màu theo khoảng cách (xanh lá cho vật gần, vàng cho vật ở khoảng cách trung bình, đỏ cho vật xa) nhằm trực quan hóa thông tin không gian. Kết quả fusion cho thấy các điểm LiDAR phủ đúng lên các vật thể tương ứng trong ảnh camera, xác nhận tính hợp lệ của phép hiệu chuẩn trong điều kiện vận hành thực tế.
+    eᵢ = ‖(uᵢ_pred, vᵢ_pred) − (uᵢ_gt, vᵢ_gt)‖₂
+
+Bốn chỉ số thống kê được ghi nhận: trung bình (mean), trung vị (median), giá trị cực đại (max) và độ lệch chuẩn (std). Ngoài ra, tỷ lệ inlier do RANSAC xác định cũng được báo cáo như một thước đo bổ sung về mức độ nhất quán của dữ liệu.
+
+Về mặt trực quan, kết quả được chồng lên ảnh RGB thu từ camera: mỗi vị trí ground truth được đánh dấu bằng chấm tròn xanh lá (bán kính 5 pixel), mỗi vị trí dự đoán của Homography bằng chấm tròn đỏ (bán kính 3 pixel). Khi hai loại chấm trùng khớp hoặc nằm sát nhau, phép hiệu chuẩn đạt chất lượng chấp nhận được.
+
+Bước xác thực cuối cùng được tiến hành ở chế độ fusion thời gian thực. Toàn bộ các điểm LiDAR nằm trong vùng quét ±90° được chiếu lên ảnh camera liên tục theo từng khung hình. Với mỗi điểm, tọa độ cực (θ, d) được chuyển sang Descartes (x, z), nhân với H và chia đồng nhất để thu tọa độ pixel (u, v), rồi vẽ lên ảnh nếu nằm trong phạm vi khung hình. Mỗi điểm được tô màu theo hàm gradient phụ thuộc khoảng cách: xanh lá cho vật ở gần (dưới 300 mm), chuyển dần sang vàng ở khoảng cách trung bình, và đỏ cho vật ở xa (trên 4000 mm). Giao diện hiển thị ảnh RGB và ảnh depth (dạng colormap JET) cạnh nhau trong cùng một cửa sổ, với các điểm LiDAR phủ lên cả hai ảnh. Kết quả fusion cho thấy các điểm LiDAR bám sát lên các vật thể tương ứng trên cả ảnh màu lẫn ảnh độ sâu, qua đó xác nhận tính hợp lệ của phép hiệu chuẩn trong điều kiện vận hành thực tế.

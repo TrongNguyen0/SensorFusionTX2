@@ -1,0 +1,53 @@
+{
+  "timestamp": 1773037439246,
+  "image_point_start": [
+    193,
+    236
+  ],
+  "image_point_end": [
+    324,
+    236
+  ],
+  "lidar_angle_min": -9.09375,
+  "lidar_angle_max": -2.53125,
+  "lidar_points_count": 6,
+  "avg_distance": 1974.5833333333333,
+  "mapped_points": [
+    {
+      "angle": -9.09375,
+      "distance": 1995.75,
+      "pixel_x": 193,
+      "pixel_y": 236
+    },
+    {
+      "angle": -8.09375,
+      "distance": 1999.0,
+      "pixel_x": 212,
+      "pixel_y": 236
+    },
+    {
+      "angle": -6.703125,
+      "distance": 1985.0,
+      "pixel_x": 240,
+      "pixel_y": 236
+    },
+    {
+      "angle": -5.28125,
+      "distance": 1970.0,
+      "pixel_x": 269,
+      "pixel_y": 236
+    },
+    {
+      "angle": -3.90625,
+      "distance": 1954.5,
+      "pixel_x": 296,
+      "pixel_y": 236
+    },
+    {
+      "angle": -2.53125,
+      "distance": 1943.25,
+      "pixel_x": 324,
+      "pixel_y": 236
+    }
+  ]
+}
