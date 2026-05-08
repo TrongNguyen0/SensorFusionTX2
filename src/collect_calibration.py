@@ -10,6 +10,7 @@ import cv2
 import os
 import json
 import threading
+import statistics
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -25,6 +26,7 @@ click_image = None
 scan_lock = threading.Lock()
 latest_filtered = []
 lidar_running = True
+scans_buffer = []  # Buffer tích lũy các scan để lọc nhiễu
 
 def normalize_angle(angle):
     if angle > 180:
@@ -39,6 +41,193 @@ def filter_scan(scan_data):
             filtered.append((q, norm, dist))
     filtered.sort(key=lambda x: x[1])
     return filtered
+
+def denoise_lidar_scans(num_scans=10):
+    """
+    Lọc nhiễu dữ liệu LiDAR từ buffer.
+    - Dùng num_scans scan gần nhất từ buffer
+    - Làm tròn góc đến độ nguyên gần nhất
+    - Tính trung bình khoảng cách cho mỗi góc
+    """
+    global scans_buffer, scan_lock
+    
+    angle_dist_map = {}  # key: angle_rounded, value: list of distances
+    
+    with scan_lock:
+        scans_to_use = scans_buffer[-num_scans:] if len(scans_buffer) >= num_scans else list(scans_buffer)
+        scans_buffer = scans_buffer[-num_scans:]     # giữ lại dữ liệu, không xóa sạch
+    
+    if len(scans_to_use) == 0:
+        print("  No scan data available!")
+        return []
+    
+    print(f"  Denoising using {len(scans_to_use)} scans...")
+    
+    for scan in scans_to_use:
+        for q, angle, dist in scan:
+            # Làm tròn góc đến độ nguyên gần nhất
+            angle_rounded = round(angle)
+            
+            if angle_rounded not in angle_dist_map:
+                angle_dist_map[angle_rounded] = []
+            angle_dist_map[angle_rounded].append(dist)
+    
+    if len(angle_dist_map) == 0:
+        print("  No data after denoising!")
+        return []
+    
+    # Tính trung bình khoảng cách cho mỗi góc
+    denoised = []
+    for angle_rounded in sorted(angle_dist_map.keys()):
+        distances = angle_dist_map[angle_rounded]
+        avg_dist = statistics.median(distances)
+        denoised.append((0, angle_rounded, avg_dist))
+    
+    print(f"  Denoised points: {len(denoised)} (from {len(scans_to_use)} scans)")
+    return denoised
+
+def polar_to_cartesian(angle_deg, distance_mm):
+    """
+    Chuyển tọa độ cực sang Cartesian
+    - angle: độ (-90 đến 90)
+    - distance: mm
+    - Returns: (x, z) trong mm
+      x: ngang (dương=phải, âm=trái)
+      z: sâu (hướng phía trước)
+    """
+    angle_rad = math.radians(angle_deg)
+    x = distance_mm * math.sin(angle_rad)
+    z = distance_mm * math.cos(angle_rad)
+    return x, z
+
+def select_bar_points_polar(scan_data, polar_ax, polar_line, polar_fig, count):
+    """
+    Chọn 2 điểm thanh trên polar plot (đã lọc nhiễu)
+    - click trực tiếp trên polar
+    - dùng tọa độ Cartesian để mapping
+    """
+    if len(scan_data) == 0:
+        return None
+
+    # Chuẩn bị dữ liệu
+    angles = [a for _, a, _ in scan_data]
+    dists = [d for _, _, d in scan_data]
+    selected = []
+    selected_points = []  # (angle, dist, x, z)
+
+    # Tạo polar plot mới để chọn
+    fig2, ax2 = plt.subplots(figsize=(10, 8), subplot_kw={'projection': 'polar'}, num="Select Bar Points")
+    ax2.set_ylim(0, 6000)
+    ax2.set_theta_zero_location('N')
+    ax2.set_theta_direction(-1)
+    ax2.set_thetamin(-90)
+    ax2.set_thetamax(90)
+    
+    # Vẽ các điểm
+    angles_rad = [math.radians(a) for a in angles]
+    ax2.scatter(angles_rad, dists, c='blue', s=10)
+    ax2.set_title('Click P1 (left) and P2 (right) on the bar, then Enter')
+    ax2.grid(True)
+
+    try:
+        fig2.canvas.manager.window.wm_geometry("+700+50")
+    except:
+        pass
+
+    def on_click(event):
+        if event.inaxes != ax2 or len(selected) >= 2:
+            return
+
+        # Tìm điểm gần nhất
+        if event.xdata is None or event.ydata is None:
+            return
+
+        click_x = event.ydata * math.sin(event.xdata)
+        click_z = event.ydata * math.cos(event.xdata)
+
+        best_i = 0
+        best_d = float('inf')
+        
+        for i, (theta, r) in enumerate(zip(angles_rad, dists)):
+            x = r * math.sin(theta)
+            z = r * math.cos(theta)
+
+            dx = x - click_x
+            dz = z - click_z
+            d = dx*dx + dz*dz
+            
+            if d < best_d:
+                best_d = d
+                best_i = i
+
+        selected.append(best_i)
+        angle = angles[best_i]
+        dist = dists[best_i]
+        x, z = polar_to_cartesian(angle, dist)
+        selected_points.append((angle, dist, x, z))
+        
+        color = 'green' if len(selected) == 1 else 'red'
+        theta_rad = math.radians(angle)
+        ax2.scatter(theta_rad, dist, c=color, s=100, zorder=5, marker='x', linewidths=3)
+        ax2.annotate(f'P{len(selected)}: A={angle:.0f}°, D={dist:.0f}mm',
+                     (theta_rad, dist),
+                     textcoords="offset points", xytext=(10, 10), fontsize=9, color=color)
+
+        if len(selected) == 2:
+            ax2.set_title('Done! Press Enter to continue')
+        fig2.canvas.draw()
+
+    done_selecting = False
+
+    def on_key(event):
+        nonlocal done_selecting
+        if event.key == 'enter' and len(selected) == 2:
+            done_selecting = True  
+
+    fig2.canvas.mpl_connect('button_press_event', on_click)
+    fig2.canvas.mpl_connect('key_press_event', on_key)
+
+    last_update = time.time()
+    while plt.fignum_exists(fig2.number) and not done_selecting:
+        plt.pause(0.05)
+        now = time.time()
+        if now - last_update >= PLOT_UPDATE_INTERVAL:
+            update_polar(polar_ax, polar_line, polar_fig, count)
+            last_update = now
+
+    # Đóng cửa sổ ở NGOÀI vòng lặp sự kiện
+    if done_selecting:
+        plt.close(fig2)
+
+    if len(selected) < 2:
+        return None
+
+    # Lấy dãy điểm thanh
+    a1 = angles[selected[0]]
+    a2 = angles[selected[1]]
+    start = min(a1, a2)
+    end = max(a1, a2)
+
+    bar = [(q, a, d) for q, a, d in scan_data if start <= a <= end]
+    bar.sort(key=lambda x: x[1])
+
+    clean_bar = []
+    prev_dist = None
+    THRESHOLD = 300  # mm
+
+    for q, a, d in bar:
+        if prev_dist is None or abs(d - prev_dist) < THRESHOLD:
+            clean_bar.append((q, a, d))
+            prev_dist = d
+
+    bar = clean_bar
+
+    print(f"  Bar range: {start:.0f}° to {end:.0f}° ({len(bar)} points)")
+    for i, (a, d, x, z) in enumerate(selected_points):
+        x, z = polar_to_cartesian(a, d)
+        print(f"    P{i+1}: angle={a:.0f}°, dist={d:.0f}mm, cartesian=({x:.0f}, {z:.0f})")
+    
+    return bar
 
 def init_lidar():    
     print("Initializing LIDAR...")
@@ -86,14 +275,20 @@ def init_csv(file_name):
 
 def lidar_thread(lidar):
     """Background thread: continuously read lidar scans"""
-    global latest_filtered, lidar_running
+    global latest_filtered, lidar_running, scans_buffer
     try:
         for scan in lidar.iter_scans():
             if not lidar_running:
                 break
             filtered = filter_scan(scan)
             with scan_lock:
-                latest_filtered = filtered
+                latest_filtered = list(filtered)        # tránh reference reuse
+                scans_buffer.append(list(filtered))     # copy an toàn
+                MAX_BUFFER = 50
+                if len(scans_buffer) > MAX_BUFFER:
+                    scans_buffer.pop(0)
+            time.sleep(0.01)
+
     except Exception as e:
         print(f"LiDAR thread error: {e}")
 
@@ -133,85 +328,6 @@ def mouse_cb(event, x, y, flags, param):
         cv2.imshow("Select Points", click_image)
         print(f"  P{len(clicked_points)}: ({x}, {y})")
 
-def select_bar_points(scan_data, polar_ax, polar_line, polar_fig, count):
-    """Show scatter of lidar points, click P1 and P2 of bar, enter to confirm.
-    Polar plot keeps updating in the background."""
-    if len(scan_data) == 0:
-        return None
-
-    angles = [a for _, a, _ in scan_data]
-    dists = [d for _, _, d in scan_data]
-    selected = []
-
-    fig2, ax2 = plt.subplots(figsize=(10, 5), num="LiDAR Points")
-    ax2.scatter(angles, dists, c='blue', s=10)
-    ax2.set_xlabel('Angle')
-    ax2.set_ylabel('Distance (mm)')
-    ax2.set_title('Click P1 (left) and P2 (right) of the bar, then Enter')
-    ax2.grid(True)
-
-    try:
-        fig2.canvas.manager.window.wm_geometry("+700+50")
-    except:
-        pass
-
-    def on_click(event):
-        if event.inaxes != ax2 or len(selected) >= 2:
-            return
-
-        a_range = max(angles) - min(angles) if max(angles) != min(angles) else 1
-        d_range = max(dists) - min(dists) if max(dists) != min(dists) else 1
-
-        best_i = 0
-        best_d = float('inf')
-        for i, (a, d) in enumerate(zip(angles, dists)):
-            dist_sq = ((a - event.xdata) / a_range)**2 + ((d - event.ydata) / d_range)**2
-            if dist_sq < best_d:
-                best_d = dist_sq
-                best_i = i
-
-        selected.append(best_i)
-        color = 'green' if len(selected) == 1 else 'red'
-        ax2.scatter(angles[best_i], dists[best_i], c=color, s=100, zorder=5, marker='x', linewidths=3)
-        ax2.annotate(f'P{len(selected)}: ({angles[best_i]:.1f}, {dists[best_i]:.0f})',
-                     (angles[best_i], dists[best_i]),
-                     textcoords="offset points", xytext=(10, 10), fontsize=9, color=color)
-
-        if len(selected) == 2:
-            ax2.set_title('Done! Press Enter to continue')
-        fig2.canvas.draw()
-
-    def on_key(event):
-        if event.key == 'enter' and len(selected) == 2:
-            plt.close(fig2)
-
-    fig2.canvas.mpl_connect('button_press_event', on_click)
-    fig2.canvas.mpl_connect('key_press_event', on_key)
-
-    # wait for scatter to close, keep polar alive
-    last_update = time.time()
-    while plt.fignum_exists(fig2.number):
-        plt.pause(0.05)
-        now = time.time()
-        if now - last_update >= PLOT_UPDATE_INTERVAL:
-            update_polar(polar_ax, polar_line, polar_fig, count)
-            last_update = now
-
-    if len(selected) < 2:
-        return None
-
-    # get angle range from selected indices
-    a1 = angles[selected[0]]
-    a2 = angles[selected[1]]
-    start = min(a1, a2)
-    end = max(a1, a2)
-
-    bar = [(q, a, d) for q, a, d in scan_data if start <= a <= end]
-    bar.sort(key=lambda x: x[1])
-
-    print(f"  Bar range: {start:.1f} to {end:.1f} ({len(bar)} points)")
-    return bar
-
 def capture_frames(pipeline, align):
     frames = pipeline.wait_for_frames(timeout_ms=5000)
     aligned = align.process(frames)
@@ -244,6 +360,9 @@ def select_image_points(color_img, polar_ax, polar_line, polar_fig, count):
             return None, None
         if key == 13 and len(clicked_points) == 2:
             break
+
+        plt.pause(0.01)
+
         # keep polar alive
         now = time.time()
         if now - last_update >= PLOT_UPDATE_INTERVAL:
@@ -254,6 +373,10 @@ def select_image_points(color_img, polar_ax, polar_line, polar_fig, count):
     return clicked_points[0], clicked_points[1]
 
 def map_lidar_to_image(bar_points, p1, p2):
+    if p1[0] >= p2[0]:
+        print("P1 phải nằm bên trái P2 — chọn lại!")
+        return []
+    
     """Map bar lidar points onto the line P1-P2"""
     angles = [a for _, a, _ in bar_points]
     min_a = min(angles)
@@ -287,6 +410,8 @@ def show_result(color_img, mapped_points, p1, p2, polar_ax, polar_line, polar_fi
         key = cv2.waitKey(30) & 0xFF
         if key == 13:
             break
+        plt.pause(0.01)
+        
         now = time.time()
         if now - last_update >= PLOT_UPDATE_INTERVAL:
             update_polar(polar_ax, polar_line, polar_fig, count)
@@ -300,7 +425,7 @@ def save_all(color_img, depth_img, result_img, calibration_data, timestamp):
     color_dir = os.path.join(OUTPUT_DIR, "color")
     depth_dir = os.path.join(OUTPUT_DIR, "depth")
     depth_cm_dir = os.path.join(OUTPUT_DIR, "depth_colormap")
-    calib_dir = os.path.join(OUTPUT_DIR, "calibration")
+    calib_dir = os.path.join(OUTPUT_DIR, "pair")
 
     for d in [color_dir, depth_dir, depth_cm_dir, calib_dir]:
         os.makedirs(d, exist_ok=True)
@@ -311,15 +436,15 @@ def save_all(color_img, depth_img, result_img, calibration_data, timestamp):
     depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(depth_img, alpha=0.03), cv2.COLORMAP_JET)
     cv2.imwrite(os.path.join(depth_cm_dir, f"depth_colormap_{timestamp}.png"), depth_colormap)
 
-    cv2.imwrite(os.path.join(calib_dir, f"calibration_{timestamp}.png"), result_img)
+    cv2.imwrite(os.path.join(calib_dir, f"pair_{timestamp}.png"), result_img)
 
-    with open(os.path.join(calib_dir, f"calibration_{timestamp}.json"), 'w') as f:
+    with open(os.path.join(calib_dir, f"pair_{timestamp}.json"), 'w') as f:
         json.dump(calibration_data, f, indent=2)
 
     print(f"  Saved to {OUTPUT_DIR}/ (timestamp: {timestamp})")
 
 def calibrate(pipeline, align, scan_data, timestamp, polar_ax, polar_line, polar_fig, count):
-    """Full calibration flow: lidar select -> camera select -> map -> save"""
+    """Full calibration flow: denoise -> lidar select -> camera select -> map -> save"""
 
     # capture camera first to avoid timeout
     color_img, depth_img = capture_frames(pipeline, align)
@@ -327,17 +452,24 @@ def calibrate(pipeline, align, scan_data, timestamp, polar_ax, polar_line, polar
         print("Failed to capture camera frames!")
         return None
 
-    # 1. select bar on lidar scatter
-    print("\n--- Select bar points on LiDAR ---")
-    bar = select_bar_points(scan_data, polar_ax, polar_line, polar_fig, count)
+    # 0. Lọc nhiễu LiDAR
+    print("\n--- Denoising LiDAR data ---")
+    denoised = denoise_lidar_scans(num_scans=10)
+    if len(denoised) == 0:
+        print("  Denoising failed!")
+        return None
+
+    # 1. select bar on denoised polar plot
+    print("\n--- Select bar points on Denoised LiDAR (Polar) ---")
+    bar = select_bar_points_polar(denoised, polar_ax, polar_line, polar_fig, count)
     if bar is None or len(bar) < 2:
-        print("Cancelled or not enough points.")
+        print("  Cancelled or not enough points.")
         return None
 
     # 2. select P1 P2 on RGB
     p1, p2 = select_image_points(color_img, polar_ax, polar_line, polar_fig, count)
     if p1 is None:
-        print("Cancelled.")
+        print("  Cancelled.")
         return None
 
     # 3. map lidar -> image
@@ -345,6 +477,12 @@ def calibrate(pipeline, align, scan_data, timestamp, polar_ax, polar_line, polar
 
     angles = [a for _, a, _ in bar]
     dists = [d for _, _, d in bar]
+
+    # Lưu thêm dữ liệu Cartesian
+    cartesian_points = []
+    for _, angle, dist in bar:
+        x, z = polar_to_cartesian(angle, dist)
+        cartesian_points.append({'angle': angle, 'distance': dist, 'x': x, 'z': z})
 
     calibration_data = {
         'timestamp': timestamp,
@@ -354,6 +492,9 @@ def calibrate(pipeline, align, scan_data, timestamp, polar_ax, polar_line, polar
         'lidar_angle_max': max(angles),
         'lidar_points_count': len(bar),
         'avg_distance': sum(dists) / len(dists),
+        'denoising_method': 'multiple_scans_rounded_angles',
+        'denoising_scans_count': 10,
+        'cartesian_points': cartesian_points,
         'mapped_points': mapped
     }
 
@@ -406,7 +547,7 @@ def main_loop(lidar, writer, pipeline, align):
 
                 save_request = False
 
-            if keyboard.is_pressed('s'):
+            if keyboard.is_pressed('s') and not save_request:
                 save_request = True
 
     except KeyboardInterrupt:
@@ -414,19 +555,25 @@ def main_loop(lidar, writer, pipeline, align):
     finally:
         lidar_running = False
 
-def cleanup(lidar, csv_file, pipeline):
+def cleanup(lidar, csv_file, pipeline, lidar_thread):
     global lidar_running
     lidar_running = False
-    time.sleep(0.5)
+
+    if lidar_thread is not None:
+        lidar_thread.join(timeout=2)
+
     csv_file.close()
+
     try:
         lidar.stop()
         lidar.disconnect()
     except:
         pass
+
     plt.close('all')
     cv2.destroyAllWindows()
     pipeline.stop()
+
     print("Cleaned up.")
 
 if __name__ == "__main__":
