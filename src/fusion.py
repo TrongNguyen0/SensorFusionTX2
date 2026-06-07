@@ -37,6 +37,17 @@ def parse_args():
     parser.add_argument("--max-draw-points", type=int, default=600)
     parser.add_argument("--min-distance", type=float, default=50.0)
     parser.add_argument("--max-distance", type=float, default=12000.0)
+    parser.add_argument(
+        "--probe-lidar-info",
+        action="store_true",
+        help="Call LiDAR get_info/get_health before scanning. Default is off for reliability.",
+    )
+    parser.add_argument(
+        "--dtr",
+        choices=["none", "true", "false"],
+        default="none",
+        help="Optionally force LiDAR serial DTR before scanning.",
+    )
     return parser.parse_args()
 
 
@@ -87,22 +98,71 @@ def read_realsense_frame(pipeline, align):
     return color, depth
 
 
-def start_lidar(port, baudrate, timeout, motor_pwm, warmup):
+def get_lidar_serial(lidar):
+    candidates = [
+        lidar,
+        getattr(lidar, "lidar_serial", None),
+        getattr(getattr(lidar, "lidar_serial", None), "_serial", None),
+        getattr(getattr(lidar, "lidar_serial", None), "serial", None),
+    ]
+
+    for candidate in candidates:
+        if candidate is not None and hasattr(candidate, "reset_input_buffer"):
+            return candidate
+    return None
+
+
+def clear_lidar_buffers(lidar):
+    serial_port = get_lidar_serial(lidar)
+    if serial_port is None:
+        print("LiDAR serial buffer clear skipped: serial object not accessible")
+        return
+
+    if hasattr(serial_port, "reset_input_buffer"):
+        serial_port.reset_input_buffer()
+    if hasattr(serial_port, "reset_output_buffer"):
+        serial_port.reset_output_buffer()
+    print("LiDAR serial buffers cleared")
+
+
+def set_lidar_dtr(lidar, dtr_mode):
+    if dtr_mode == "none":
+        return
+
+    serial_port = get_lidar_serial(lidar)
+    if serial_port is None or not hasattr(serial_port, "setDTR"):
+        print("LiDAR DTR skipped: serial object not accessible")
+        return
+
+    value = dtr_mode == "true"
+    serial_port.setDTR(value)
+    print("LiDAR DTR forced to {}".format(value))
+
+
+def start_lidar_reliable(port, baudrate, timeout, motor_pwm, warmup, probe_info, dtr):
     PyRPlidar = import_pyrplidar()
     lidar = PyRPlidar()
 
     print("Connecting LiDAR on {}...".format(port))
     lidar.connect(port=port, baudrate=baudrate, timeout=timeout)
+    clear_lidar_buffers(lidar)
+    set_lidar_dtr(lidar, dtr)
+    time.sleep(0.2)
 
-    try:
-        print("LiDAR info:", lidar.get_info())
-        print("LiDAR health:", lidar.get_health())
-    except Exception as exc:
-        print("LiDAR info/health warning:", exc)
+    if probe_info:
+        try:
+            print("LiDAR info:", lidar.get_info())
+            print("LiDAR health:", lidar.get_health())
+        except Exception as exc:
+            print("LiDAR info/health warning:", exc)
+        clear_lidar_buffers(lidar)
+        time.sleep(0.2)
 
     print("Starting LiDAR motor PWM {}...".format(motor_pwm))
     lidar.set_motor_pwm(motor_pwm)
     time.sleep(warmup)
+    clear_lidar_buffers(lidar)
+    time.sleep(0.2)
 
     print("Starting LiDAR standard scan with start_scan()...")
     scan = lidar.start_scan()
@@ -258,12 +318,14 @@ def main():
 
     try:
         pipeline, align = start_realsense(args.width, args.height, args.fps)
-        lidar, lidar_iterator = start_lidar(
+        lidar, lidar_iterator = start_lidar_reliable(
             args.lidar_port,
             args.lidar_baudrate,
             args.lidar_timeout,
             args.motor_pwm,
             args.warmup,
+            args.probe_lidar_info,
+            args.dtr,
         )
 
         while True:
