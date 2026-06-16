@@ -18,6 +18,15 @@ PORT = "COM3"
 CSV_FILE = os.path.join(PROJECT_ROOT, "lidar_data.csv")
 PLOT_UPDATE_INTERVAL = 0.2
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "data", "captured_data")
+COLOR_WIDTH = 640
+COLOR_HEIGHT = 480
+DEPTH_WIDTH = 640
+DEPTH_HEIGHT = 480
+CAMERA_FPS = 30
+FRONT_ANGLE_MIN = -90
+FRONT_ANGLE_MAX = 90
+DENOISE_SCAN_COUNT = 10
+BAR_DISTANCE_JUMP_THRESHOLD_MM = 300
 
 clicked_points = []
 click_image = None
@@ -37,7 +46,7 @@ def filter_scan(scan_data):
     filtered = []
     for q, angle, dist in scan_data:
         norm = normalize_angle(angle)
-        if -90 <= norm <= 90 and dist > 0:
+        if FRONT_ANGLE_MIN <= norm <= FRONT_ANGLE_MAX and dist > 0:
             filtered.append((q, norm, dist))
     filtered.sort(key=lambda x: x[1])
     return filtered
@@ -213,10 +222,8 @@ def select_bar_points_polar(scan_data, polar_ax, polar_line, polar_fig, count):
 
     clean_bar = []
     prev_dist = None
-    THRESHOLD = 300  # mm
-
     for q, a, d in bar:
-        if prev_dist is None or abs(d - prev_dist) < THRESHOLD:
+        if prev_dist is None or abs(d - prev_dist) < BAR_DISTANCE_JUMP_THRESHOLD_MM:
             clean_bar.append((q, a, d))
             prev_dist = d
 
@@ -240,10 +247,26 @@ def init_lidar():
 
 def init_realsense():
     print("Initializing RealSense Camera...")
+    ctx = rs.context()
+    devices = ctx.query_devices()
+    if len(devices) == 0:
+        raise RuntimeError(
+            "No RealSense device connected. Check USB cable/port, close apps using the camera, "
+            "then reconnect the device."
+        )
+
+    device = devices[0]
+    try:
+        name = device.get_info(rs.camera_info.name)
+        serial = device.get_info(rs.camera_info.serial_number)
+        print(f"RealSense Device: {name} (S/N: {serial})")
+    except Exception:
+        print("RealSense device detected.")
+
     pipeline = rs.pipeline()
     config = rs.config()
-    config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
-    config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+    config.enable_stream(rs.stream.depth, DEPTH_WIDTH, DEPTH_HEIGHT, rs.format.z16, CAMERA_FPS)
+    config.enable_stream(rs.stream.color, COLOR_WIDTH, COLOR_HEIGHT, rs.format.bgr8, CAMERA_FPS)
     profile = pipeline.start(config)
     align = rs.align(rs.stream.color)
     return pipeline, align
@@ -394,21 +417,32 @@ def map_lidar_to_image(bar_points, p1, p2):
     return mapped
 
 def show_result(color_img, mapped_points, p1, p2, polar_ax, polar_line, polar_fig, count):
-    """Show image with mapped lidar points, enter to continue"""
+    """Show image with mapped lidar points, then accept or reject the sample."""
     result = color_img.copy()
     cv2.line(result, p1, p2, (255, 255, 0), 2)
     for pt in mapped_points:
         cv2.circle(result, (pt['pixel_x'], pt['pixel_y']), 3, (0, 255, 0), -1)
 
+    cv2.rectangle(result, (0, 0), (COLOR_WIDTH, 58), (0, 0, 0), -1)
+    cv2.putText(result, f"Mapped points: {len(mapped_points)} | Saved samples: {count}",
+                (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
+    cv2.putText(result, "Enter/A: accept and save | R: reject sample",
+                (10, 46), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 1)
+
     cv2.namedWindow("Result")
     cv2.moveWindow("Result", 700, 50)
     cv2.imshow("Result", result)
-    print("--- Result shown. Press Enter to continue ---")
+    print("--- Result shown. Press Enter/A to save, R to reject ---")
 
     last_update = time.time()
+    accepted = None
     while True:
         key = cv2.waitKey(30) & 0xFF
-        if key == 13:
+        if key == 13 or key == ord('a'):
+            accepted = True
+            break
+        if key == ord('r'):
+            accepted = False
             break
         plt.pause(0.01)
         
@@ -418,7 +452,7 @@ def show_result(color_img, mapped_points, p1, p2, polar_ax, polar_line, polar_fi
             last_update = now
 
     cv2.destroyWindow("Result")
-    return result
+    return result, accepted
 
 def save_all(color_img, depth_img, result_img, calibration_data, timestamp):
     """Save images and calibration json"""
@@ -454,7 +488,7 @@ def calibrate(pipeline, align, scan_data, timestamp, polar_ax, polar_line, polar
 
     # 0. Lọc nhiễu LiDAR
     print("\n--- Denoising LiDAR data ---")
-    denoised = denoise_lidar_scans(num_scans=10)
+    denoised = denoise_lidar_scans(num_scans=DENOISE_SCAN_COUNT)
     if len(denoised) == 0:
         print("  Denoising failed!")
         return None
@@ -474,9 +508,13 @@ def calibrate(pipeline, align, scan_data, timestamp, polar_ax, polar_line, polar
 
     # 3. map lidar -> image
     mapped = map_lidar_to_image(bar, p1, p2)
+    if len(mapped) == 0:
+        print("  Mapping failed or no mapped points. Sample rejected.")
+        return None
 
     angles = [a for _, a, _ in bar]
     dists = [d for _, _, d in bar]
+    avg_distance = sum(dists) / len(dists)
 
     # Lưu thêm dữ liệu Cartesian
     cartesian_points = []
@@ -486,20 +524,47 @@ def calibrate(pipeline, align, scan_data, timestamp, polar_ax, polar_line, polar
 
     calibration_data = {
         'timestamp': timestamp,
+        'timestamp_iso': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamp / 1000)),
+        'source_script': 'collect_calibration.py',
+        'hardware': {
+            'lidar_model': 'RPLidar A1M8',
+            'lidar_port': PORT,
+            'camera_model': 'Intel RealSense D435'
+        },
+        'capture_config': {
+            'color_width': COLOR_WIDTH,
+            'color_height': COLOR_HEIGHT,
+            'depth_width': DEPTH_WIDTH,
+            'depth_height': DEPTH_HEIGHT,
+            'fps': CAMERA_FPS,
+            'front_angle_min_deg': FRONT_ANGLE_MIN,
+            'front_angle_max_deg': FRONT_ANGLE_MAX
+        },
         'image_point_start': p1,
         'image_point_end': p2,
         'lidar_angle_min': min(angles),
         'lidar_angle_max': max(angles),
         'lidar_points_count': len(bar),
-        'avg_distance': sum(dists) / len(dists),
+        'mapped_points_count': len(mapped),
+        'avg_distance': avg_distance,
         'denoising_method': 'multiple_scans_rounded_angles',
-        'denoising_scans_count': 10,
+        'denoising_scans_count': DENOISE_SCAN_COUNT,
+        'bar_distance_jump_threshold_mm': BAR_DISTANCE_JUMP_THRESHOLD_MM,
         'cartesian_points': cartesian_points,
         'mapped_points': mapped
     }
 
+    print("  Sample summary:")
+    print(f"    Bar points: {len(bar)}")
+    print(f"    Mapped points: {len(mapped)}")
+    print(f"    Angle range: {min(angles):.0f} to {max(angles):.0f} deg")
+    print(f"    Average distance: {avg_distance:.1f} mm")
+
     # 4. show result
-    result_img = show_result(color_img, mapped, p1, p2, polar_ax, polar_line, polar_fig, count)
+    result_img, accepted = show_result(color_img, mapped, p1, p2, polar_ax, polar_line, polar_fig, count)
+    if not accepted:
+        print("  Sample rejected by user.")
+        return None
 
     # 5. save everything
     save_all(color_img, depth_img, result_img, calibration_data, timestamp)
@@ -555,34 +620,50 @@ def main_loop(lidar, writer, pipeline, align):
     finally:
         lidar_running = False
 
-def cleanup(lidar, csv_file, pipeline, lidar_thread):
+def cleanup(lidar=None, csv_file=None, pipeline=None, lidar_thread=None):
     global lidar_running
     lidar_running = False
 
     if lidar_thread is not None:
         lidar_thread.join(timeout=2)
 
-    csv_file.close()
+    if csv_file is not None:
+        try:
+            csv_file.close()
+        except:
+            pass
 
-    try:
-        lidar.stop()
-        lidar.disconnect()
-    except:
-        pass
+    if lidar is not None:
+        try:
+            lidar.stop()
+            lidar.disconnect()
+        except:
+            pass
 
     plt.close('all')
     cv2.destroyAllWindows()
-    pipeline.stop()
+    if pipeline is not None:
+        try:
+            pipeline.stop()
+        except:
+            pass
 
     print("Cleaned up.")
 
 if __name__ == "__main__":
-    lidar = init_lidar()
-    pipeline, align = init_realsense()
-    csv_file, writer = init_csv(CSV_FILE)
+    lidar = None
+    pipeline = None
+    csv_file = None
+    align = None
+    writer = None
     try:
+        lidar = init_lidar()
+        pipeline, align = init_realsense()
+        csv_file, writer = init_csv(CSV_FILE)
         main_loop(lidar, writer, pipeline, align)
     except KeyboardInterrupt:
         pass
+    except Exception as e:
+        print(f"Startup/runtime error: {e}")
     finally:
-        cleanup(lidar, csv_file, pipeline)
+        cleanup(lidar=lidar, csv_file=csv_file, pipeline=pipeline)
