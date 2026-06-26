@@ -1,121 +1,54 @@
 # SensorFusionTX2
 
-Realtime Sensor Fusion on Jetson TX2 using Intel RealSense RGB-D, RPLidar A1, `pyrplidar`, OpenCV, NumPy, and Python 3.6.
+PyQt-based Camera-LiDAR sensor fusion demo using an Intel RealSense camera and an RPLidar sensor.
 
-The calibration file is expected at:
+## Repository Structure
+
+```text
+src/   Source code for data collection, calibration, fusion, and the PyQt UI
+data/  Captured calibration data, calibration results, and fusion output samples
+```
+
+## Main Features
+
+- Collect synchronized RealSense RGB/depth frames and RPLidar scans.
+- Select calibration correspondences between LiDAR target points and camera image points.
+- Compute camera-LiDAR calibration parameters `K`, `R`, and `t`.
+- Project LiDAR points onto the camera image for real-time fusion visualization.
+- Browse captured data, calibration previews, and fusion output from the PyQt interface.
+
+## Main Entry Point
+
+Run the PyQt application:
 
 ```bash
-calibration_result_pnp.npz
+python src/app_pyqt.py
 ```
 
-It must contain:
+## Calibration Workflow
 
-```text
-K: 3x3 camera intrinsic matrix
-R: 3x3 LiDAR-to-camera rotation matrix
-T: 3x1 LiDAR-to-camera translation vector
-```
+1. Open the UI and select `Collect`.
+2. Start camera and LiDAR sensors.
+3. Capture calibration samples.
+4. Select corresponding LiDAR and image points.
+5. Accept valid samples.
+6. Switch to `Compute` and run calibration.
+7. Switch to `Fusion` and start real-time projection.
 
-## Project Layout
+## Hardware Notes
 
-```text
-project_root/
-├── src/
-│   ├── calibration_loader.py
-│   ├── realsense_reader.py
-│   ├── lidar_reader.py
-│   ├── fusion_engine.py
-│   ├── fusion_visualizer.py
-│   ├── dataset_logger.py
-│   ├── tcp_server.py
-│   └── main.py
-├── client/
-│   └── tcp_client.py
-├── calibration_result_pnp.npz
-└── README.md
-```
+- Camera: Intel RealSense D435
+- LiDAR: RPLidar A1M8
+- LiDAR connection: UART through USB serial, configured as `COM3` by default
 
-## Jetson Requirements
+## Dependencies
 
-Install the runtime dependencies on Jetson:
+The application uses Python with:
 
-```bash
-pip3 install numpy opencv-python pyrplidar pyserial
-```
+- PyQt5
+- OpenCV
+- NumPy
+- pyrealsense2
+- rplidar
 
-`pyrealsense2` should come from the Librealsense build/install used on the Jetson.
-
-The user running the app must have access to `/dev/ttyUSB0`. A persistent fix is to add the user to `dialout` and re-login:
-
-```bash
-sudo usermod -aG dialout $USER
-```
-
-## Run On Jetson
-
-From the project root:
-
-```bash
-python3 src/main.py
-```
-
-Useful options:
-
-```bash
-python3 src/main.py --no-display
-python3 src/main.py --tcp-port 9999
-python3 src/main.py --lidar-port /dev/ttyUSB0
-python3 src/main.py --scan-mode force
-```
-
-Controls when display is enabled:
-
-```text
-S       save dataset sample
-Q/Esc   quit
-```
-
-Saved samples are written to:
-
-```text
-dataset/YYYYMMDD_HHMMSS/
-├── color.png
-├── depth.png
-├── fusion.png
-├── lidar.npy
-└── metadata.json
-```
-
-## TCP Visualization Client
-
-On the laptop:
-
-```bash
-python3 client/tcp_client.py --host <JETSON_IP> --port 9999
-```
-
-Press `Q` or `Esc` in the client window to quit.
-
-## Coordinate Convention
-
-LiDAR polar measurements are converted to LiDAR XYZ in millimeters:
-
-```text
-x = distance * sin(angle)
-y = 0
-z = distance * cos(angle)
-```
-
-Then the calibration transform is applied:
-
-```text
-CameraXYZ = R * LiDARXYZ + T
-```
-
-Projection uses:
-
-```text
-uv = K * CameraXYZ
-```
-
-Points with invalid LiDAR distance, negative camera depth, or image coordinates outside the color frame are discarded.
+Install dependencies according to the active Python environment before running the UI.
