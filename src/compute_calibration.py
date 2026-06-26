@@ -1,4 +1,4 @@
-import glob
+﻿import glob
 import json
 import os
 import sys
@@ -27,11 +27,9 @@ PREVIEW_DIR = os.path.join(RESULT_DIR, "reprojection_preview")
 COLOR_WIDTH = 640
 COLOR_HEIGHT = 480
 CAMERA_FPS = 30
-RANSAC_ITERATIONS = 1000
-RANSAC_REPROJECTION_ERROR = 8.0
-RANSAC_CONFIDENCE = 0.99
-PNP_FLAGS = cv2.SOLVEPNP_IPPE
+PNP_FLAGS = cv2.SOLVEPNP_ITERATIVE
 MAX_PREVIEW_IMAGES = 8
+MIN_CALIBRATION_CORRESPONDENCES = 6
 
 
 def ensure_output_dirs():
@@ -142,6 +140,29 @@ def polar_to_lidar_point(angle_deg, distance_mm):
     return [x, 0.0, z]
 
 
+def parse_direct_correspondence(item):
+    lidar = item.get("lidar", {})
+    image = item.get("image", {})
+
+    if {"x_mm", "y_mm", "z_mm"}.issubset(lidar):
+        lidar_pt = [
+            float(lidar["x_mm"]),
+            float(lidar["y_mm"]),
+            float(lidar["z_mm"]),
+        ]
+    elif {"angle_deg", "distance_mm"}.issubset(lidar):
+        lidar_pt = polar_to_lidar_point(lidar["angle_deg"], lidar["distance_mm"])
+    else:
+        return None
+
+    if {"u", "v"}.issubset(image):
+        pixel_pt = [float(image["u"]), float(image["v"])]
+    else:
+        return None
+
+    return lidar_pt, pixel_pt
+
+
 def load_data():
     json_files = sorted(glob.glob(os.path.join(CALIBRATION_DIR, "pair_*.json")))
     if len(json_files) == 0:
@@ -156,16 +177,16 @@ def load_data():
         with open(jf, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        mapped_points = data.get("mapped_points", [])
+        correspondences = data.get("correspondences", [])
         valid_count = 0
 
-        for idx, pt in enumerate(mapped_points):
-            required = ["angle", "distance", "pixel_x", "pixel_y"]
-            if any(key not in pt for key in required):
+        for idx, item in enumerate(correspondences):
+            parsed = parse_direct_correspondence(item)
+            if parsed is None:
                 continue
 
-            lidar_pt = polar_to_lidar_point(pt["angle"], pt["distance"])
-            pixel_pt = [pt["pixel_x"], pt["pixel_y"]]
+            lidar_pt, pixel_pt = parsed
+            lidar = item.get("lidar", {})
 
             lidar_pts.append(lidar_pt)
             pixel_pts.append(pixel_pt)
@@ -173,24 +194,34 @@ def load_data():
                 "source_json": jf,
                 "source_image_candidates": source_image_candidates(jf),
                 "point_index": idx,
-                "angle": pt["angle"],
-                "distance": pt["distance"],
-                "pixel_x": pt["pixel_x"],
-                "pixel_y": pt["pixel_y"],
+                "angle": lidar.get("angle_deg"),
+                "distance": lidar.get("distance_mm"),
+                "x_mm": lidar_pt[0],
+                "y_mm": lidar_pt[1],
+                "z_mm": lidar_pt[2],
+                "pixel_x": pixel_pt[0],
+                "pixel_y": pixel_pt[1],
+                "data_version": data.get("data_version"),
             })
             valid_count += 1
 
         file_stats.append({
             "file": os.path.basename(jf),
-            "mapped_points": len(mapped_points),
+            "data_version": data.get("data_version", "legacy_or_unknown"),
+            "correspondences": len(correspondences),
             "valid_points": valid_count,
+            "used": valid_count > 0,
         })
 
     lidar_pts = np.array(lidar_pts, dtype=np.float64)
     pixel_pts = np.array(pixel_pts, dtype=np.float64)
 
-    if len(lidar_pts) < 4:
-        raise RuntimeError(f"Not enough correspondences for PnP: {len(lidar_pts)} found")
+    if len(lidar_pts) < MIN_CALIBRATION_CORRESPONDENCES:
+        raise RuntimeError(
+            "Not enough direct correspondences for PnP: "
+            f"{len(lidar_pts)} found, need at least {MIN_CALIBRATION_CORRESPONDENCES}. "
+            "Capture at least two 3-point snapshots."
+        )
 
     print(f"Loaded {len(json_files)} pair files")
     print(f"Loaded {len(lidar_pts)} valid correspondences")
@@ -199,57 +230,51 @@ def load_data():
 
 
 # ==============================
-# PNP + RANSAC
+# PNP
 # ==============================
 def solve_pnp(lidar_pts, pixel_pts, K, dist_coeffs):
-    success, rvec, tvec, inliers = cv2.solvePnPRansac(
+    success, rvec, tvec = cv2.solvePnP(
         lidar_pts,
         pixel_pts,
         K,
         dist_coeffs,
         flags=PNP_FLAGS,
-        iterationsCount=RANSAC_ITERATIONS,
-        reprojectionError=RANSAC_REPROJECTION_ERROR,
-        confidence=RANSAC_CONFIDENCE
     )
 
-    if not success or inliers is None or len(inliers) == 0:
-        raise RuntimeError("PnP failed or produced no inliers")
+    if not success:
+        raise RuntimeError("PnP failed. Check point correspondences and pose diversity.")
 
     R, _ = cv2.Rodrigues(rvec)
     T = tvec.reshape(3, 1)
-    inlier_indices = inliers.flatten().astype(np.int32)
 
-    print(f"Inliers: {len(inlier_indices)}/{len(lidar_pts)}")
+    print(f"PnP solved using all correspondences: {len(lidar_pts)} points")
 
-    return rvec, tvec, R, T, inlier_indices
+    return rvec, tvec, R, T
 
 
 # ==============================
 # ERROR
 # ==============================
-def compute_reprojection(lidar_pts, pixel_pts, rvec, tvec, K, dist_coeffs, inlier_indices):
+def compute_reprojection(lidar_pts, pixel_pts, rvec, tvec, K, dist_coeffs):
     projected, _ = cv2.projectPoints(lidar_pts, rvec, tvec, K, dist_coeffs)
     projected = projected.reshape(-1, 2)
     all_errors = np.linalg.norm(projected - pixel_pts, axis=1)
-    inlier_errors = all_errors[inlier_indices]
 
     metrics = {
         "total_correspondences": int(len(lidar_pts)),
-        "inlier_count": int(len(inlier_indices)),
-        "outlier_count": int(len(lidar_pts) - len(inlier_indices)),
-        "inlier_ratio": float(len(inlier_indices) / len(lidar_pts)),
+        "used_correspondences": int(len(lidar_pts)),
+        "rejected_correspondences": 0,
+        "selection_method": "all_correspondences_no_ransac",
         "reprojection_error_px": {
             "all": summarize_errors(all_errors),
-            "inliers": summarize_errors(inlier_errors),
         }
     }
 
-    print("Reprojection Error (inliers):")
-    print(f"Mean: {metrics['reprojection_error_px']['inliers']['mean']:.2f} px")
-    print(f"Median: {metrics['reprojection_error_px']['inliers']['median']:.2f} px")
-    print(f"Max: {metrics['reprojection_error_px']['inliers']['max']:.2f} px")
-    print(f"Std: {metrics['reprojection_error_px']['inliers']['std']:.2f} px")
+    print("Reprojection Error (all correspondences):")
+    print(f"Mean: {metrics['reprojection_error_px']['all']['mean']:.2f} px")
+    print(f"Median: {metrics['reprojection_error_px']['all']['median']:.2f} px")
+    print(f"Max: {metrics['reprojection_error_px']['all']['max']:.2f} px")
+    print(f"Std: {metrics['reprojection_error_px']['all']['std']:.2f} px")
 
     return projected, all_errors, metrics
 
@@ -270,25 +295,102 @@ def summarize_errors(errors):
     }
 
 
-def build_point_report(records, projected, all_errors, inlier_indices):
-    inlier_set = set(int(i) for i in inlier_indices)
+def optional_float(value):
+    return None if value is None else float(value)
+
+
+def build_point_report(records, projected, all_errors):
     report = []
     for idx, record in enumerate(records):
         report.append({
             "source_json": os.path.basename(record["source_json"]),
             "point_index": int(record["point_index"]),
-            "angle": float(record["angle"]),
-            "distance": float(record["distance"]),
+            "angle": optional_float(record["angle"]),
+            "distance": optional_float(record["distance"]),
+            "lidar_point_mm": [
+                float(record["x_mm"]),
+                float(record["y_mm"]),
+                float(record["z_mm"]),
+            ],
             "observed_pixel": [float(record["pixel_x"]), float(record["pixel_y"])],
             "projected_pixel": [float(projected[idx, 0]), float(projected[idx, 1])],
             "error_px": float(all_errors[idx]),
-            "is_inlier": idx in inlier_set,
+            "used_for_pnp": True,
+            "is_inlier": None,
+            "rejection_reason": None,
         })
     return report
 
 
-def save_preview_images(records, projected, all_errors, inlier_indices):
-    inlier_set = set(int(i) for i in inlier_indices)
+def draw_reprojection_legend(image):
+    """Draw a compact legend without hiding the calibration target."""
+    items = [
+        ("P1 / P2 / P3", "Selected image correspondences"),
+        ("observed", "Observed image point"),
+        ("projected", "Reprojected LiDAR point"),
+        ("error", "Reprojection error"),
+        ("target", "Calibration target profile"),
+    ]
+    panel_x, panel_y = 12, 12
+    panel_w = min(360, image.shape[1] - 24)
+    row_h = 25
+    panel_h = 34 + row_h * len(items)
+
+    overlay = image.copy()
+    cv2.rectangle(
+        overlay,
+        (panel_x, panel_y),
+        (panel_x + panel_w, panel_y + panel_h),
+        (20, 20, 20),
+        -1,
+    )
+    cv2.addWeighted(overlay, 0.72, image, 0.28, 0, image)
+    cv2.rectangle(
+        image,
+        (panel_x, panel_y),
+        (panel_x + panel_w, panel_y + panel_h),
+        (255, 255, 255),
+        1,
+    )
+    cv2.putText(
+        image,
+        "LEGEND",
+        (panel_x + 12, panel_y + 24),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.58,
+        (255, 255, 255),
+        2,
+        cv2.LINE_AA,
+    )
+
+    for row, (symbol, description) in enumerate(items):
+        center_y = panel_y + 45 + row * row_h
+        symbol_x = panel_x + 18
+        if symbol == "P1 / P2 / P3":
+            for offset, color in zip((0, 13, 26), ((0, 255, 0), (0, 220, 255), (0, 0, 255))):
+                cv2.circle(image, (symbol_x + offset, center_y - 4), 4, color, -1)
+        elif symbol == "observed":
+            cv2.circle(image, (symbol_x + 13, center_y - 4), 5, (255, 0, 0), -1)
+        elif symbol == "projected":
+            cv2.circle(image, (symbol_x + 13, center_y - 4), 4, (0, 255, 0), -1)
+        elif symbol == "error":
+            cv2.line(image, (symbol_x, center_y - 4), (symbol_x + 27, center_y - 4), (0, 255, 255), 2)
+        else:
+            cv2.line(image, (symbol_x, center_y - 4), (symbol_x + 27, center_y - 4), (255, 255, 0), 2)
+
+        cv2.putText(
+            image,
+            description,
+            (panel_x + 60, center_y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.43,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
+        )
+
+
+def save_preview_images(records, projected, all_errors):
     grouped = {}
     for idx, record in enumerate(records):
         key = tuple(record["source_image_candidates"])
@@ -312,11 +414,11 @@ def save_preview_images(records, projected, all_errors, inlier_indices):
         for idx in indices:
             observed = (int(round(records[idx]["pixel_x"])), int(round(records[idx]["pixel_y"])))
             reproj = (int(round(projected[idx, 0])), int(round(projected[idx, 1])))
-            color = (0, 255, 0) if idx in inlier_set else (0, 0, 255)
             cv2.circle(image, observed, 4, (255, 0, 0), -1)
-            cv2.circle(image, reproj, 3, color, -1)
+            cv2.circle(image, reproj, 3, (0, 255, 0), -1)
             cv2.line(image, observed, reproj, (0, 255, 255), 1)
 
+        # Keep the reprojection preview clean: no legend panel over the image.
         basename = os.path.basename(image_path)
         out_path = os.path.join(PREVIEW_DIR, f"reprojection_{basename}")
         imwrite_unicode(out_path, image)
@@ -328,7 +430,7 @@ def save_preview_images(records, projected, all_errors, inlier_indices):
     return saved
 
 
-def save_results(K, dist_coeffs, rvec, tvec, R, T, inlier_indices, projected, all_errors,
+def save_results(K, dist_coeffs, rvec, tvec, R, T, projected, all_errors,
                  metrics, file_stats, point_report, preview_paths, camera_info):
     np.savez(
         OUTPUT_FILE,
@@ -338,7 +440,7 @@ def save_results(K, dist_coeffs, rvec, tvec, R, T, inlier_indices, projected, al
         tvec=tvec,
         R=R,
         T=T,
-        inlier_indices=inlier_indices,
+        used_indices=np.arange(len(projected), dtype=np.int32),
         projected_points=projected,
         reprojection_errors=all_errors,
     )
@@ -352,11 +454,10 @@ def save_results(K, dist_coeffs, rvec, tvec, R, T, inlier_indices, projected, al
             "K": K,
             "distCoeffs": dist_coeffs,
         },
-        "ransac_config": {
-            "iterations": RANSAC_ITERATIONS,
-            "reprojection_error_px": RANSAC_REPROJECTION_ERROR,
-            "confidence": RANSAC_CONFIDENCE,
-            "pnp_flag": "SOLVEPNP_IPPE",
+        "pnp_config": {
+            "method": "solvePnP",
+            "point_selection": "all_correspondences_no_ransac",
+            "pnp_flag": "SOLVEPNP_ITERATIVE",
         },
         "extrinsics": {
             "R": R,
@@ -386,16 +487,16 @@ def main():
     K, dist_coeffs, camera_info = get_camera_intrinsics()
     lidar_pts, pixel_pts, records, file_stats = load_data()
 
-    rvec, tvec, R, T, inlier_indices = solve_pnp(lidar_pts, pixel_pts, K, dist_coeffs)
+    rvec, tvec, R, T = solve_pnp(lidar_pts, pixel_pts, K, dist_coeffs)
     projected, all_errors, metrics = compute_reprojection(
-        lidar_pts, pixel_pts, rvec, tvec, K, dist_coeffs, inlier_indices
+        lidar_pts, pixel_pts, rvec, tvec, K, dist_coeffs
     )
-    point_report = build_point_report(records, projected, all_errors, inlier_indices)
-    preview_paths = save_preview_images(records, projected, all_errors, inlier_indices)
+    point_report = build_point_report(records, projected, all_errors)
+    preview_paths = save_preview_images(records, projected, all_errors)
 
     save_results(
-        K, dist_coeffs, rvec, tvec, R, T, inlier_indices,
-        projected, all_errors, metrics, file_stats, point_report, preview_paths, camera_info
+        K, dist_coeffs, rvec, tvec, R, T, projected, all_errors,
+        metrics, file_stats, point_report, preview_paths, camera_info
     )
 
     print("\n== K ==\n", K)

@@ -21,11 +21,14 @@ from PyQt5.QtWidgets import (
     QListView,
     QListWidget,
     QListWidgetItem,
+    QHeaderView,
     QMainWindow,
     QPushButton,
     QPlainTextEdit,
     QSizePolicy,
     QStackedWidget,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -34,8 +37,9 @@ import pyrealsense2 as rs
 from rplidar import RPLidar
 
 from core.collect_core import (
+    REQUIRED_CALIBRATION_POINTS,
     build_calibration_data,
-    map_lidar_to_image,
+    build_correspondences,
     render_pair_preview,
     save_sample,
 )
@@ -47,13 +51,13 @@ from core.fusion_core import (
     save_fusion_frame,
 )
 from core.lidar_core import (
-    DENOISE_SCAN_COUNT,
-    analyze_denoise_bins,
-    extract_bar_points,
+    DISPLAY_SMOOTH_ANGLE_BIN_DEG,
+    DISPLAY_SMOOTH_SCAN_COUNT,
     denoise_scans,
+    extract_corner_features,
     filter_scan,
-    nearest_lidar_point,
     polar_to_cartesian,
+    smooth_scan_for_display,
 )
 
 
@@ -61,13 +65,14 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "data", "captured_data")
 FUSION_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "data", "fusion_output")
 CALIB_FILE = os.path.join(PROJECT_ROOT, "calibration_result_pnp.npz")
+CALIB_METRICS_FILE = os.path.join(PROJECT_ROOT, "data", "calibration_result", "calibration_metrics.json")
 LIDAR_PORT = "COM3"
 COLOR_WIDTH = 640
 COLOR_HEIGHT = 480
 DEPTH_WIDTH = 640
 DEPTH_HEIGHT = 480
 CAMERA_FPS = 30
-LIDAR_DISPLAY_RANGE_MM = 6000
+LIDAR_DISPLAY_RANGE_MM = 4000
 LIDAR_GRID_STEP_MM = 1000
 FUSION_DENOISE_SCAN_COUNT = 5
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".bmp"}
@@ -75,13 +80,21 @@ TEXT_EXTS = {".json", ".txt", ".md"}
 
 APP_STYLE = """
 QMainWindow, QWidget {
-    background: #f4f6f8;
+    background: #f3f8fc;
     color: #18212f;
     font-family: Segoe UI;
     font-size: 10pt;
 }
+QWidget#controlPanel {
+    background: #f8fbff;
+    border-left: 1px solid #d8e7f5;
+}
+QLabel {
+    background: transparent;
+}
 QGroupBox {
-    border: 1px solid #cfd6df;
+    background: #ffffff;
+    border: 1px solid #cfe0ee;
     border-radius: 6px;
     margin-top: 10px;
     padding: 12px 8px 8px 8px;
@@ -93,44 +106,149 @@ QGroupBox::title {
     padding: 0 4px;
 }
 QPushButton {
-    min-height: 28px;
-    border: 1px solid #b8c1cc;
-    border-radius: 4px;
-    background: #ffffff;
-    padding: 4px 8px;
+    min-height: 34px;
+    border: 1px solid #93c5fd;
+    border-radius: 6px;
+    background: #e0f2fe;
+    color: #0f3f66;
+    padding: 6px 10px;
+    font-weight: 700;
 }
 QPushButton:hover {
-    background: #edf5ff;
-    border-color: #6aa5e8;
+    background: #dbeafe;
+    border-color: #60a5fa;
 }
 QPushButton:pressed {
-    background: #dbeeff;
+    background: #bfdbfe;
+    border-color: #3b82f6;
 }
 QPushButton:disabled {
-    color: #8f98a3;
-    background: #eceff3;
+    color: #94a3b8;
+    background: #eef2f6;
+    border-color: #d8e0ea;
+}
+QPushButton#primaryButton,
+QPushButton#successButton,
+QPushButton#dangerButton,
+QPushButton#secondaryButton,
+QPushButton#categoryButton {
+    color: #0f3f66;
+    background: #e0f2fe;
+    border-color: #93c5fd;
+}
+QPushButton#primaryButton:hover,
+QPushButton#successButton:hover,
+QPushButton#dangerButton:hover,
+QPushButton#secondaryButton:hover,
+QPushButton#categoryButton:hover {
+    color: #0b3b63;
+    background: #dbeafe;
+    border-color: #60a5fa;
+}
+QPushButton#primaryButton:pressed,
+QPushButton#successButton:pressed,
+QPushButton#dangerButton:pressed,
+QPushButton#secondaryButton:pressed,
+QPushButton#categoryButton:pressed {
+    background: #bfdbfe;
+    border-color: #3b82f6;
 }
 QPushButton#categoryButton {
-    min-height: 30px;
-    font-weight: 600;
+    min-height: 34px;
+    font-weight: 700;
 }
-QComboBox, QListWidget, QPlainTextEdit {
-    border: 1px solid #c4ccd6;
+QComboBox, QListWidget, QPlainTextEdit, QTableWidget {
+    border: 1px solid #cfe0ee;
     border-radius: 4px;
     background: #ffffff;
 }
+QTableWidget {
+    gridline-color: #e2e8f0;
+    selection-background-color: #dbeafe;
+    selection-color: #0f172a;
+}
+QHeaderView::section {
+    color: #ffffff;
+    background: #153a66;
+    border: 0;
+    border-right: 1px solid #315b89;
+    padding: 8px 10px;
+    font-weight: 700;
+}
+QLabel#computeTitle {
+    color: #0f172a;
+    font-size: 26px;
+    font-weight: 800;
+}
+QLabel#computeSubtitle {
+    color: #64748b;
+    font-size: 12pt;
+}
+QLabel#computeSectionTitle {
+    color: #18212f;
+    font-size: 15pt;
+    font-weight: 800;
+}
+QFrame#metricCard, QFrame#matrixCard {
+    background: #ffffff;
+    border: 1px solid #d7e0ea;
+    border-radius: 7px;
+}
+QLabel#metricTitle {
+    color: #526174;
+    font-size: 10.5pt;
+    font-weight: 700;
+}
+QLabel#metricValue {
+    color: #0f172a;
+    font-size: 24pt;
+    font-weight: 800;
+}
+QLabel#metricHint {
+    color: #64748b;
+}
+QLabel#matrixTitle {
+    color: #172033;
+    font-size: 12pt;
+    font-weight: 800;
+}
+QLabel#matrixValue {
+    color: #0f172a;
+    font-family: Consolas;
+    font-size: 10.5pt;
+}
+QLabel#matrixHint {
+    color: #64748b;
+}
+QLabel#computeStatusPill {
+    color: #ffffff;
+    background: #64748b;
+    border-radius: 14px;
+    padding: 6px 14px;
+    font-weight: 800;
+}
 QComboBox {
-    min-height: 30px;
-    padding: 4px 8px;
-    font-weight: 600;
+    min-height: 34px;
+    padding: 5px 10px;
+    font-weight: 700;
+    color: #0f3f66;
+    background: #e0f2fe;
+    border: 1px solid #93c5fd;
+    border-radius: 6px;
+}
+QComboBox:hover {
+    background: #dbeafe;
+    border-color: #60a5fa;
 }
 QComboBox::drop-down {
-    width: 28px;
-    border-left: 1px solid #d4dbe4;
+    width: 30px;
+    border-left: 1px solid #93c5fd;
 }
 QComboBox QAbstractItemView {
-    selection-background-color: #2563eb;
-    selection-color: #ffffff;
+    color: #0f3f66;
+    background: #ffffff;
+    selection-background-color: #dbeafe;
+    selection-color: #0b3b63;
     padding: 6px;
     outline: 0;
 }
@@ -223,6 +341,17 @@ def section_label(text):
     return label
 
 
+def set_button_kind(button, kind):
+    object_names = {
+        "primary": "primaryButton",
+        "success": "successButton",
+        "danger": "dangerButton",
+        "secondary": "secondaryButton",
+    }
+    button.setObjectName(object_names.get(kind, "secondaryButton"))
+    return button
+
+
 class ImageView(QLabel):
     point_clicked = pyqtSignal(int, int)
 
@@ -289,28 +418,37 @@ class LidarPlotWidget(QWidget):
         self.setMinimumSize(640, 320)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.points = []
-        self.point_ages = []
-        self.selected = []
+        self.manual_clicks = []
+        self.feature_points = []
+        self.feature_lines = []
+        self.support_points = []
+        self.inlier_points = []
         self.display_range = float(LIDAR_DISPLAY_RANGE_MM)
         self.debug_metrics = {}
 
-    def set_points(self, points, point_ages=None, debug_metrics=None):
+    def set_points(self, points, debug_metrics=None):
         self.points = list(points)
-        self.point_ages = list(point_ages or [])
         self.debug_metrics = debug_metrics or {}
         self.update()
 
     def set_selected(self, points):
-        self.selected = list(points)
+        self.feature_points = list(points)
+        self.update()
+
+    def set_manual_clicks(self, clicks):
+        self.manual_clicks = list(clicks)
+        self.update()
+
+    def set_feature_overlay(self, features=None, lines=None, support_points=None, inlier_points=None):
+        self.feature_points = list(features or [])
+        self.feature_lines = [line for line in (lines or []) if line]
+        self.support_points = list(support_points or [])
+        self.inlier_points = list(inlier_points or [])
         self.update()
 
     def mousePressEvent(self, event):
-        if not self.points:
-            return
         x_mm, z_mm = self._screen_to_world(event.pos())
-        point = nearest_lidar_point(self.points, x_mm, z_mm)
-        if point is not None:
-            self.point_clicked.emit(point)
+        self.point_clicked.emit({"x_mm": float(x_mm), "z_mm": float(z_mm)})
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -319,14 +457,18 @@ class LidarPlotWidget(QWidget):
 
         self._draw_grid(painter)
         self._draw_points(painter)
+        self._draw_support_points(painter)
+        self._draw_inlier_points(painter)
+        self._draw_feature_lines(painter)
+        self._draw_manual_clicks(painter)
         self._draw_selected(painter)
+        self._draw_legend(painter)
 
         painter.setPen(QPen(QColor(230, 230, 230), 1))
+        source = self.debug_metrics.get("source", "latest display scan")
         header = (
-            f"LiDAR Plot (denoised) | points: {len(self.points)} | "
-            f"current bins: {self.debug_metrics.get('current_bins', '-')} | "
-            f"stale bins: {self.debug_metrics.get('stale_bins', '-')} | "
-            f"max age: {self.debug_metrics.get('max_bin_age', '-')}"
+            f"LiDAR Plot ({source}) | points: {len(self.points)} | "
+            f"range: {int(self.display_range / 1000)}m"
         )
         painter.drawText(12, 22, header)
 
@@ -349,30 +491,84 @@ class LidarPlotWidget(QWidget):
         painter.drawLine(0, origin.y(), self.width(), origin.y())
 
     def _draw_points(self, painter):
-        for idx, (_, angle, distance) in enumerate(self.points):
-            age = self.point_ages[idx] if idx < len(self.point_ages) else 0
-            painter.setPen(QPen(self._age_color(age), 2))
+        painter.setPen(QPen(QColor(0, 240, 130), 1))
+        painter.setBrush(QColor(0, 240, 130))
+        for _, angle, distance in self.points:
             x, z = polar_to_cartesian(angle, distance)
             point = self._world_to_screen(x, z)
             painter.drawPoint(point)
 
-    def _age_color(self, age):
-        if age is None:
-            return QColor(180, 180, 180)
-        if age == 0:
-            return QColor(0, 240, 130)
-        if age <= 2:
-            return QColor(255, 220, 0)
-        return QColor(255, 90, 30)
+    def _draw_support_points(self, painter):
+        painter.setPen(QPen(QColor(255, 150, 40), 1))
+        painter.setBrush(QColor(255, 150, 40))
+        for item in self.support_points:
+            point = self._world_to_screen(item["x_mm"], item["z_mm"])
+            painter.drawEllipse(point, 1, 1)
+
+    def _draw_inlier_points(self, painter):
+        painter.setPen(QPen(QColor(0, 220, 255), 1))
+        painter.setBrush(QColor(0, 220, 255))
+        for item in self.inlier_points:
+            point = self._world_to_screen(item["x_mm"], item["z_mm"])
+            painter.drawEllipse(point, 2, 2)
+
+    def _draw_feature_lines(self, painter):
+        painter.setPen(QPen(QColor(80, 150, 255), 2))
+        for line in self.feature_lines:
+            start = line.get("start")
+            end = line.get("end")
+            if not start or not end:
+                continue
+            p1 = self._world_to_screen(start["x_mm"], start["z_mm"])
+            p2 = self._world_to_screen(end["x_mm"], end["z_mm"])
+            painter.drawLine(p1, p2)
+
+    def _draw_manual_clicks(self, painter):
+        painter.setPen(QPen(QColor(0, 220, 255), 2))
+        painter.setBrush(QColor(0, 220, 255))
+        for idx, click in enumerate(self.manual_clicks):
+            point = self._world_to_screen(click["x_mm"], click["z_mm"])
+            painter.drawEllipse(point, 5, 5)
+            painter.drawText(point.x() + 8, point.y() + 14, f"C{idx + 1}")
 
     def _draw_selected(self, painter):
-        painter.setPen(QPen(QColor(255, 80, 80), 2))
-        painter.setBrush(QColor(255, 80, 80))
-        for i, (_, angle, distance) in enumerate(self.selected):
-            x, z = polar_to_cartesian(angle, distance)
-            point = self._world_to_screen(x, z)
-            painter.drawEllipse(point, 6, 6)
-            painter.drawText(point.x() + 8, point.y() - 8, f"P{i + 1}")
+        painter.setPen(QPen(QColor(255, 60, 60), 2))
+        painter.setBrush(QColor(255, 60, 60))
+        for idx, item in enumerate(self.feature_points):
+            point = self._world_to_screen(item["x_mm"], item["z_mm"])
+            painter.drawEllipse(point, 5, 5)
+            painter.drawText(point.x() + 8, point.y() - 8, f"P{idx + 1}")
+
+    def _draw_legend(self, painter):
+        x = self.width() - 230
+        y = 12
+        width = 216
+        height = 82
+        painter.setPen(QPen(QColor(70, 70, 70), 1))
+        painter.setBrush(QColor(245, 245, 245, 230))
+        painter.drawRect(x, y, width, height)
+
+        items = [
+            ("Laser data points", QColor(0, 240, 130), "point"),
+            ("Selected points", QColor(0, 220, 255), "circle"),
+            ("Selected virtual points", QColor(255, 60, 60), "circle"),
+            ("Fitted line", QColor(80, 150, 255), "line"),
+        ]
+        text_x = x + 32
+        item_y = y + 18
+        for label, color, kind in items:
+            marker_x = x + 16
+            painter.setPen(QPen(color, 2))
+            painter.setBrush(color)
+            if kind == "line":
+                painter.drawLine(marker_x - 6, item_y - 3, marker_x + 8, item_y - 3)
+            elif kind == "point":
+                painter.drawPoint(marker_x, item_y - 3)
+            else:
+                painter.drawEllipse(QPoint(marker_x, item_y - 3), 3, 3)
+            painter.setPen(QPen(QColor(20, 20, 20), 1))
+            painter.drawText(text_x, item_y + 1, label)
+            item_y += 18
 
     def _world_to_screen(self, x_mm, z_mm):
         margin = 24
@@ -393,7 +589,6 @@ class LidarPlotWidget(QWidget):
         x_mm = x_norm * 2 * self.display_range - self.display_range
         z_mm = z_norm * self.display_range
         return x_mm, z_mm
-
 
 class CameraWorker(QThread):
     frame_ready = pyqtSignal(object, object)
@@ -458,18 +653,29 @@ class LidarWorker(QThread):
 
     def run(self):
         self.running = True
+        display_buffer = deque(maxlen=DISPLAY_SMOOTH_SCAN_COUNT)
         try:
             self.lidar = RPLidar(self.port, baudrate=115200, timeout=3)
             self.status.emit(f"LiDAR started on {self.port}")
-            scan_buffer = deque(maxlen=DENOISE_SCAN_COUNT)
             for scan in self.lidar.iter_scans():
                 if not self.running:
                     break
                 filtered_scan = filter_scan(scan)
-                scan_buffer.append(filtered_scan)
-                denoised_scan = denoise_scans(list(scan_buffer), num_scans=DENOISE_SCAN_COUNT)
-                debug = analyze_denoise_bins(list(scan_buffer), denoised_scan)
-                self.scan_ready.emit(filtered_scan, denoised_scan, len(scan), debug)
+                display_buffer.append(filtered_scan)
+                display_scan = smooth_scan_for_display(
+                    list(display_buffer),
+                    num_scans=DISPLAY_SMOOTH_SCAN_COUNT,
+                    angle_bin_deg=DISPLAY_SMOOTH_ANGLE_BIN_DEG,
+                )
+                debug = {
+                    "source": "display smoothed scan",
+                    "raw_points": int(len(scan)),
+                    "filtered_points": int(len(filtered_scan)),
+                    "display_points": int(len(display_scan)),
+                    "smooth_scans": int(min(len(display_buffer), DISPLAY_SMOOTH_SCAN_COUNT)),
+                    "smooth_angle_bin_deg": float(DISPLAY_SMOOTH_ANGLE_BIN_DEG),
+                }
+                self.scan_ready.emit(filtered_scan, display_scan, len(scan), debug)
         except Exception as exc:
             self.status.emit(f"LiDAR error: {exc}")
         finally:
@@ -484,7 +690,6 @@ class LidarWorker(QThread):
     def stop(self):
         self.running = False
         self.wait(3000)
-
 
 class FusionWorker(QThread):
     frame_ready = pyqtSignal(object, object, object, object, object, object)
@@ -582,22 +787,23 @@ class SensorFusionUI(QMainWindow):
         self.lidar_worker = None
         self.fusion_worker = None
         self.process = None
+        self.process_script_name = None
 
         self.latest_color = None
         self.latest_depth = None
         self.latest_scan = []
-        self.latest_denoised_scan = []
+        self.latest_display_scan = []
         self.latest_lidar_debug = {}
         self.latest_raw_scan_count = 0
-        self.scan_buffer = deque(maxlen=50)
 
         self.snapshot_color = None
         self.snapshot_depth = None
         self.snapshot_lidar = []
+        self.lidar_raw_clicks = []
         self.lidar_selected = []
+        self.lidar_feature_extraction = None
         self.image_selected = []
-        self.bar_points = []
-        self.mapped_points = []
+        self.correspondences = []
         self.preview_img = None
         self.sample_count = 0
         self.state = "IDLE"
@@ -646,10 +852,286 @@ class SensorFusionUI(QMainWindow):
         return page
 
     def _build_compute_display(self):
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(24, 24, 24, 18)
+        layout.setSpacing(14)
+
+        header_layout = QHBoxLayout()
+        title_layout = QVBoxLayout()
+        title = QLabel("Compute Calibration")
+        title.setObjectName("computeTitle")
+        subtitle = QLabel("Tổng hợp kết quả tính toán tham số ngoại tại Camera - LiDAR")
+        subtitle.setObjectName("computeSubtitle")
+        title_layout.addWidget(title)
+        title_layout.addWidget(subtitle)
+        header_layout.addLayout(title_layout, 1)
+
+        self.compute_status_pill = QLabel("WAITING")
+        self.compute_status_pill.setObjectName("computeStatusPill")
+        self.compute_status_pill.setAlignment(Qt.AlignCenter)
+        self.compute_status_pill.setMinimumWidth(120)
+        header_layout.addWidget(self.compute_status_pill, 0, Qt.AlignTop)
+        layout.addLayout(header_layout)
+
+        metric_layout = QHBoxLayout()
+        metric_layout.setSpacing(12)
+        self.compute_metric_labels = {}
+        for key, title_text, hint, color in [
+            ("samples", "Mẫu hiệu chỉnh", "Dữ liệu được dùng", "#2563eb"),
+            ("used", "Điểm tương ứng", "Điểm dùng cho PnP", "#0891b2"),
+            ("mean", "Sai số TB", "Mean reprojection", "#dc2626"),
+            ("rejected", "Điểm bị loại", "Rejected points", "#16a34a"),
+        ]:
+            card, value_label, hint_label = self._build_metric_card(title_text, hint, color)
+            self.compute_metric_labels[key] = (value_label, hint_label)
+            metric_layout.addWidget(card)
+        layout.addLayout(metric_layout)
+
+        content_layout = QHBoxLayout()
+        content_layout.setSpacing(18)
+
+        left_layout = QVBoxLayout()
+        left_layout.setSpacing(10)
+        table_title = QLabel("Bảng kết quả hiệu chỉnh")
+        table_title.setObjectName("computeSectionTitle")
+        left_layout.addWidget(table_title)
+
+        self.compute_result_table = QTableWidget(0, 3)
+        self.compute_result_table.setHorizontalHeaderLabels(["Nhóm dữ liệu", "Giá trị", "Đơn vị"])
+        self.compute_result_table.verticalHeader().setVisible(False)
+        self.compute_result_table.setAlternatingRowColors(True)
+        self.compute_result_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.compute_result_table.setSelectionMode(QTableWidget.NoSelection)
+        self.compute_result_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.compute_result_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.compute_result_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        left_layout.addWidget(self.compute_result_table, 1)
+
         self.compute_log = QPlainTextEdit()
         self.compute_log.setReadOnly(True)
+        self.compute_log.setMaximumHeight(150)
         self.compute_log.setPlainText("Compute log will appear here.")
-        return self.compute_log
+        self.compute_log.setStyleSheet("background: #101820; color: #cbd5e1; border-color: #26384a;")
+        left_layout.addWidget(self.compute_log)
+        content_layout.addLayout(left_layout, 2)
+
+        right_layout = QVBoxLayout()
+        right_layout.setSpacing(10)
+        matrix_title = QLabel("Tham số hiệu chỉnh")
+        matrix_title.setObjectName("computeSectionTitle")
+        right_layout.addWidget(matrix_title)
+
+        self.compute_matrix_labels = {}
+        for key, title_text, hint, color in [
+            ("K", "Ma trận nội tại K", "Đơn vị: pixel", "#2563eb"),
+            ("R", "Ma trận quay R", "Biến đổi LiDAR sang camera", "#0891b2"),
+            ("T", "Vector tịnh tiến t", "Đơn vị: mm", "#16a34a"),
+        ]:
+            card, value_label = self._build_matrix_card(title_text, hint, color)
+            self.compute_matrix_labels[key] = value_label
+            right_layout.addWidget(card)
+
+        self.compute_camera_info_label = QLabel("Camera: chưa có dữ liệu hiệu chỉnh")
+        self.compute_camera_info_label.setWordWrap(True)
+        self.compute_camera_info_label.setObjectName("pathLabel")
+        right_layout.addWidget(self.compute_camera_info_label)
+        right_layout.addStretch(1)
+        content_layout.addLayout(right_layout, 1)
+
+        layout.addLayout(content_layout, 1)
+        self.refresh_compute_results()
+        return page
+
+    def _build_metric_card(self, title, hint, color):
+        card = QFrame()
+        card.setObjectName("metricCard")
+        layout = QHBoxLayout(card)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        accent = QFrame()
+        accent.setFixedWidth(6)
+        accent.setStyleSheet(f"background: {color}; border-radius: 3px;")
+        layout.addWidget(accent)
+
+        body_layout = QVBoxLayout()
+        body_layout.setContentsMargins(14, 14, 14, 14)
+        body_layout.setSpacing(4)
+        layout.addLayout(body_layout, 1)
+
+        title_label = QLabel(title)
+        title_label.setObjectName("metricTitle")
+        value_label = QLabel("--")
+        value_label.setObjectName("metricValue")
+        hint_label = QLabel(hint)
+        hint_label.setObjectName("metricHint")
+        hint_label.setWordWrap(True)
+
+        body_layout.addWidget(title_label)
+        body_layout.addWidget(value_label)
+        body_layout.addWidget(hint_label)
+        return card, value_label, hint_label
+
+    def _build_matrix_card(self, title, hint, color):
+        card = QFrame()
+        card.setObjectName("matrixCard")
+        layout = QHBoxLayout(card)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        accent = QFrame()
+        accent.setFixedWidth(6)
+        accent.setStyleSheet(f"background: {color}; border-radius: 3px;")
+        layout.addWidget(accent)
+
+        body_layout = QVBoxLayout()
+        body_layout.setContentsMargins(14, 14, 14, 12)
+        body_layout.setSpacing(6)
+        layout.addLayout(body_layout, 1)
+
+        title_label = QLabel(title)
+        title_label.setObjectName("matrixTitle")
+        value_label = QLabel("--")
+        value_label.setObjectName("matrixValue")
+        value_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        hint_label = QLabel(hint)
+        hint_label.setObjectName("matrixHint")
+        hint_label.setWordWrap(True)
+
+        body_layout.addWidget(title_label)
+        body_layout.addWidget(value_label)
+        body_layout.addWidget(hint_label)
+        return card, value_label
+
+    def set_compute_status(self, text, color="#64748b"):
+        if hasattr(self, "compute_status_pill"):
+            self.compute_status_pill.setText(text)
+            self.compute_status_pill.setStyleSheet(
+                f"QLabel#computeStatusPill {{ background: {color}; color: #ffffff; }}"
+            )
+
+    def set_metric_value(self, key, value, hint=None):
+        if not hasattr(self, "compute_metric_labels") or key not in self.compute_metric_labels:
+            return
+        value_label, hint_label = self.compute_metric_labels[key]
+        value_label.setText(str(value))
+        if hint is not None:
+            hint_label.setText(hint)
+
+    def format_number(self, value, digits=2):
+        if value is None:
+            return "--"
+        try:
+            return f"{float(value):.{digits}f}"
+        except (TypeError, ValueError):
+            return str(value)
+
+    def format_matrix(self, matrix, digits=2):
+        if matrix is None:
+            return "--"
+        arr = np.asarray(matrix, dtype=float)
+        if arr.ndim == 1:
+            arr = arr.reshape(-1, 1)
+        rows = []
+        for row in arr:
+            rows.append("[ " + "  ".join(f"{value:.{digits}f}" for value in row) + " ]")
+        return "\n".join(rows)
+
+    def set_compute_table_rows(self, rows):
+        self.compute_result_table.setRowCount(len(rows))
+        for row_index, row in enumerate(rows):
+            for column_index, value in enumerate(row):
+                item = QTableWidgetItem(str(value))
+                if column_index == 1:
+                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                else:
+                    item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                if row_index in (2, 4) and column_index == 1:
+                    item.setForeground(QColor("#dc2626"))
+                self.compute_result_table.setItem(row_index, column_index, item)
+        self.compute_result_table.resizeRowsToContents()
+
+    def refresh_compute_results(self):
+        metrics_data = {}
+        npz_data = None
+        try:
+            if os.path.exists(CALIB_METRICS_FILE):
+                with open(CALIB_METRICS_FILE, "r", encoding="utf-8") as f:
+                    metrics_data = json.load(f)
+            if os.path.exists(CALIB_FILE):
+                npz_data = np.load(CALIB_FILE)
+        except Exception as exc:
+            self.set_compute_status("LOAD ERROR", "#dc2626")
+            self.compute_log.appendPlainText(f"Could not load compute result: {exc}")
+            return
+
+        if not metrics_data and npz_data is None:
+            self.set_compute_status("WAITING", "#64748b")
+            self.set_metric_value("samples", "--")
+            self.set_metric_value("used", "--")
+            self.set_metric_value("mean", "--")
+            self.set_metric_value("rejected", "--")
+            self.set_compute_table_rows([("Trạng thái", "Chưa có kết quả", "")])
+            for label in getattr(self, "compute_matrix_labels", {}).values():
+                label.setText("--")
+            return
+
+        metrics = metrics_data.get("metrics", {})
+        error_stats = metrics.get("reprojection_error_px", {}).get("all", {})
+        file_stats = metrics_data.get("file_stats", [])
+        used_samples = sum(1 for item in file_stats if item.get("used"))
+        if used_samples == 0 and file_stats:
+            used_samples = len(file_stats)
+
+        used = metrics.get("used_correspondences")
+        rejected = metrics.get("rejected_correspondences")
+        mean_error = error_stats.get("mean")
+        median_error = error_stats.get("median")
+        max_error = error_stats.get("max")
+        std_error = error_stats.get("std")
+
+        if used is None and npz_data is not None and "used_indices" in npz_data:
+            used = len(npz_data["used_indices"])
+        if rejected is None:
+            rejected = 0
+        if used_samples == 0:
+            pair_dir = Path(OUTPUT_DIR) / "pair"
+            used_samples = len(list(pair_dir.glob("pair_*.json"))) if pair_dir.is_dir() else "--"
+
+        self.set_compute_status("COMPLETED", "#16a34a")
+        self.set_metric_value("samples", used_samples)
+        self.set_metric_value("used", used if used is not None else "--")
+        self.set_metric_value("mean", self.format_number(mean_error), "Mean reprojection (px)")
+        self.set_metric_value("rejected", rejected)
+
+        self.set_compute_table_rows([
+            ("Số mẫu hiệu chỉnh", used_samples, "mẫu"),
+            ("Điểm tương ứng", used if used is not None else "--", "điểm"),
+            ("Sai số trung bình", self.format_number(mean_error), "pixel"),
+            ("Sai số trung vị", self.format_number(median_error), "pixel"),
+            ("Sai số lớn nhất", self.format_number(max_error), "pixel"),
+            ("Độ lệch chuẩn", self.format_number(std_error), "pixel"),
+        ])
+
+        if npz_data is not None:
+            if "K" in npz_data:
+                self.compute_matrix_labels["K"].setText(self.format_matrix(npz_data["K"], 2))
+            if "R" in npz_data:
+                self.compute_matrix_labels["R"].setText(self.format_matrix(npz_data["R"], 4))
+            if "T" in npz_data:
+                self.compute_matrix_labels["T"].setText(self.format_matrix(npz_data["T"], 2))
+            elif "tvec" in npz_data:
+                self.compute_matrix_labels["T"].setText(self.format_matrix(npz_data["tvec"], 2))
+
+        camera_info = metrics_data.get("camera_info", {})
+        camera_name = camera_info.get("name") or "Camera"
+        serial = camera_info.get("serial_number") or "--"
+        firmware = camera_info.get("firmware_version") or "--"
+        generated_at = metrics_data.get("generated_at") or "--"
+        self.compute_camera_info_label.setText(
+            f"Camera: {camera_name} | Serial: {serial} | Firmware: {firmware} | Generated: {generated_at}"
+        )
 
     def _build_fusion_display(self):
         page = QWidget()
@@ -693,6 +1175,7 @@ class SensorFusionUI(QMainWindow):
 
     def _build_control_panel(self):
         panel = QWidget()
+        panel.setObjectName("controlPanel")
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
@@ -733,12 +1216,12 @@ class SensorFusionUI(QMainWindow):
         box = QGroupBox("Collect Controls")
         layout = QVBoxLayout(box)
 
-        self.start_btn = QPushButton("Start Sensors")
-        self.stop_btn = QPushButton("Stop Sensors")
-        self.capture_btn = QPushButton("Capture Snapshot")
-        self.reset_btn = QPushButton("Reset Selection")
-        self.accept_btn = QPushButton("Accept Sample")
-        self.reject_btn = QPushButton("Reject Sample")
+        self.start_btn = set_button_kind(QPushButton("Start Sensors"), "primary")
+        self.stop_btn = set_button_kind(QPushButton("Stop Sensors"), "danger")
+        self.capture_btn = set_button_kind(QPushButton("Capture Snapshot"), "primary")
+        self.reset_btn = set_button_kind(QPushButton("Reset Selection"), "secondary")
+        self.accept_btn = set_button_kind(QPushButton("Accept Sample"), "success")
+        self.reject_btn = set_button_kind(QPushButton("Reject Sample"), "danger")
 
         self.start_btn.clicked.connect(self.start_sensors)
         self.stop_btn.clicked.connect(self.stop_sensors)
@@ -754,10 +1237,11 @@ class SensorFusionUI(QMainWindow):
             "Flow:\n"
             "1. Start Sensors\n"
             "2. Capture Snapshot\n"
-            "3. Click 2 LiDAR target ends\n"
-            "4. Click 2 image target ends\n"
+            f"3. Click {REQUIRED_CALIBRATION_POINTS} LiDAR target points\n"
+            f"4. Click {REQUIRED_CALIBRATION_POINTS} matching image points\n"
             "5. Accept or Reject\n\n"
-            "LiDAR snapshot uses multi-scan median binning."
+            "Use the same order on LiDAR and image: edge endpoint, corner vertex, edge endpoint.\n"
+            "LiDAR clicks are saved directly as world-coordinate calibration points."
         )
         guide.setWordWrap(True)
         layout.addWidget(guide)
@@ -767,19 +1251,24 @@ class SensorFusionUI(QMainWindow):
     def _build_compute_controls(self):
         box = QGroupBox("Compute Controls")
         layout = QVBoxLayout(box)
-        run_btn = QPushButton("Run Calibration")
+        run_btn = set_button_kind(QPushButton("Run Calibration"), "primary")
         run_btn.clicked.connect(lambda: self.run_script("compute_calibration.py"))
+        refresh_btn = set_button_kind(QPushButton("Refresh Results"), "secondary")
+        refresh_btn.clicked.connect(self.refresh_compute_results)
         layout.addWidget(run_btn)
-        layout.addWidget(QLabel("Runs the upgraded compute script and streams terminal output here."))
+        layout.addWidget(refresh_btn)
+        guide = QLabel("Runs calibration and loads K, R, t plus reprojection metrics into the summary table.")
+        guide.setWordWrap(True)
+        layout.addWidget(guide)
         layout.addStretch(1)
         return box
 
     def _build_fusion_controls(self):
         box = QGroupBox("Fusion Controls")
         layout = QVBoxLayout(box)
-        self.start_fusion_btn = QPushButton("Start Fusion")
-        self.stop_fusion_btn = QPushButton("Stop Fusion")
-        self.save_fusion_btn = QPushButton("Save Frame")
+        self.start_fusion_btn = set_button_kind(QPushButton("Start Fusion"), "primary")
+        self.stop_fusion_btn = set_button_kind(QPushButton("Stop Fusion"), "danger")
+        self.save_fusion_btn = set_button_kind(QPushButton("Save Frame"), "success")
         self.start_fusion_btn.clicked.connect(self.start_fusion)
         self.stop_fusion_btn.clicked.connect(self.stop_fusion)
         self.save_fusion_btn.clicked.connect(self.save_fusion_frame_ui)
@@ -821,7 +1310,7 @@ class SensorFusionUI(QMainWindow):
         self.data_path_label.setObjectName("pathLabel")
         source_layout.addWidget(self.data_path_label)
 
-        self.data_back_btn = QPushButton("Back")
+        self.data_back_btn = set_button_kind(QPushButton("Back"), "secondary")
         self.data_back_btn.clicked.connect(self.go_data_parent)
         source_layout.addWidget(self.data_back_btn)
 
@@ -832,8 +1321,8 @@ class SensorFusionUI(QMainWindow):
         layout.addWidget(source_frame, 1)
 
         nav_layout = QHBoxLayout()
-        prev_btn = QPushButton("Previous")
-        next_btn = QPushButton("Next")
+        prev_btn = set_button_kind(QPushButton("Previous"), "secondary")
+        next_btn = set_button_kind(QPushButton("Next"), "secondary")
         prev_btn.clicked.connect(self.show_previous_data_image)
         next_btn.clicked.connect(self.show_next_data_image)
         nav_layout.addWidget(prev_btn)
@@ -852,6 +1341,8 @@ class SensorFusionUI(QMainWindow):
     def on_mode_changed(self, index):
         self.display_stack.setCurrentIndex(index)
         self.control_stack.setCurrentIndex(index)
+        if index == 1:
+            self.refresh_compute_results()
 
     def log(self, message):
         timestamp = time.strftime("%H:%M:%S")
@@ -893,16 +1384,14 @@ class SensorFusionUI(QMainWindow):
         if self.state == "STREAMING":
             self.camera_view.set_image(color_img)
 
-    def on_lidar_scan(self, filtered_scan, denoised_scan, raw_scan_count, debug):
+    def on_lidar_scan(self, filtered_scan, display_scan, raw_scan_count, debug):
         self.latest_scan = filtered_scan
-        self.latest_denoised_scan = denoised_scan
+        self.latest_display_scan = display_scan
         self.latest_lidar_debug = debug
         self.latest_raw_scan_count = raw_scan_count
-        self.scan_buffer.append(denoised_scan)
         if self.state == "STREAMING":
             self.lidar_view.set_points(
-                denoised_scan,
-                point_ages=debug.get("point_ages", []),
+                display_scan,
                 debug_metrics=debug,
             )
 
@@ -910,111 +1399,161 @@ class SensorFusionUI(QMainWindow):
         if self.latest_color is None or self.latest_depth is None:
             self.log("Cannot capture: no camera frame yet")
             return
-        if not self.latest_denoised_scan:
-            self.log("Cannot capture: no LiDAR scan yet")
+        if not self.latest_display_scan:
+            self.log("Cannot capture: no LiDAR display scan yet")
             return
 
         self.snapshot_color = self.latest_color.copy()
         self.snapshot_depth = self.latest_depth.copy()
-        self.snapshot_lidar = list(self.latest_denoised_scan)
+        self.snapshot_lidar = list(self.latest_display_scan)
+        self.lidar_raw_clicks = []
         self.lidar_selected = []
+        self.lidar_feature_extraction = None
         self.image_selected = []
-        self.bar_points = []
-        self.mapped_points = []
+        self.correspondences = []
         self.preview_img = None
 
         self.camera_view.set_image(self.snapshot_color)
         self.lidar_view.set_points(
             self.snapshot_lidar,
-            point_ages=self.latest_lidar_debug.get("point_ages", []),
-            debug_metrics=self.latest_lidar_debug,
+            debug_metrics={
+                "source": "captured display-smoothed snapshot",
+                "display_points": len(self.snapshot_lidar),
+                "smooth_scans": self.latest_lidar_debug.get("smooth_scans"),
+                "smooth_angle_bin_deg": self.latest_lidar_debug.get("smooth_angle_bin_deg"),
+            },
         )
-        self.lidar_view.set_selected([])
+        self.lidar_view.set_manual_clicks([])
+        self.lidar_view.set_feature_overlay([], [], [], [])
         self.set_state("SNAPSHOT_CAPTURED")
         self.log(
             "Snapshot captured. "
             f"Raw points: {self.latest_raw_scan_count}, "
             f"filtered points: {len(self.latest_scan)}, "
-            f"denoised points: {len(self.snapshot_lidar)}, "
-            f"stale bins: {self.latest_lidar_debug.get('stale_bins', '-')}, "
-            f"max age: {self.latest_lidar_debug.get('max_bin_age', '-')}"
+            f"display-smoothed points used for fitting: {len(self.snapshot_lidar)}"
         )
-        self.log("Click 2 target endpoints on the LiDAR plot, then 2 endpoints on the image.")
+        self.log(
+            "Snapshot uses the same LiDAR points shown on the plot: "
+            f"smoothing scans={self.latest_lidar_debug.get('smooth_scans')}, "
+            f"angle bin={self.latest_lidar_debug.get('smooth_angle_bin_deg')} deg."
+        )
+        self.log(
+            "Click 3 LiDAR guide points on the corner target: left edge, corner, right edge. "
+            "The system will fit target lines and create 3 calibration feature points."
+        )
 
-    def on_lidar_clicked(self, point):
+    def on_lidar_clicked(self, click):
         if self.state not in ["SNAPSHOT_CAPTURED", "SELECTING_LIDAR", "SELECTING_IMAGE"]:
             return
-        if len(self.lidar_selected) >= 2:
+        if len(self.lidar_raw_clicks) >= REQUIRED_CALIBRATION_POINTS:
             return
 
-        self.lidar_selected.append(point)
-        self.lidar_view.set_selected(self.lidar_selected)
-        _, angle, distance = point
-        self.log(f"LiDAR P{len(self.lidar_selected)}: angle={angle:.1f} deg, distance={distance:.1f} mm")
+        self.lidar_raw_clicks.append(click)
+        self.lidar_view.set_manual_clicks(self.lidar_raw_clicks)
+        self.log(
+            f"LiDAR guide C{len(self.lidar_raw_clicks)}: "
+            f"x={click['x_mm']:.1f} mm, z={click['z_mm']:.1f} mm"
+        )
 
-        if len(self.lidar_selected) == 2:
-            a1 = self.lidar_selected[0][1]
-            a2 = self.lidar_selected[1][1]
-            self.bar_points = extract_bar_points(self.snapshot_lidar, a1, a2)
+        if len(self.lidar_raw_clicks) == REQUIRED_CALIBRATION_POINTS:
+            try:
+                features, diagnostics = extract_corner_features(self.snapshot_lidar, self.lidar_raw_clicks)
+            except ValueError as exc:
+                self.log(f"LiDAR feature fitting failed: {exc}")
+                self.lidar_raw_clicks = []
+                self.lidar_selected = []
+                self.lidar_feature_extraction = None
+                self.lidar_view.set_manual_clicks([])
+                self.lidar_view.set_feature_overlay([], [], [], [])
+                self.set_state("SNAPSHOT_CAPTURED")
+                return
+
+            self.lidar_selected = features
+            self.lidar_feature_extraction = diagnostics
+            lines = [diagnostics.get("left_line"), diagnostics.get("right_line")]
+            support_points = diagnostics.get("left_support_points", []) + diagnostics.get("right_support_points", [])
+            inlier_points = diagnostics.get("left_inlier_points", []) + diagnostics.get("right_inlier_points", [])
+            self.lidar_view.set_feature_overlay(
+                features,
+                lines,
+                support_points=support_points,
+                inlier_points=inlier_points,
+            )
             self.set_state("SELECTING_IMAGE")
-            self.log(f"Bar points selected: {len(self.bar_points)}")
-            self.log("Now click 2 target endpoints on the camera image.")
+            left_fit = diagnostics.get("left_line_fit", {})
+            right_fit = diagnostics.get("right_line_fit", {})
+            left_residual = left_fit.get("residuals", {}).get("median_mm")
+            right_residual = right_fit.get("residuals", {}).get("median_mm")
+            self.log(
+                "LiDAR features fitted: "
+                f"left inliers={diagnostics.get('left_inlier_count')}/{diagnostics.get('left_support_count')}, "
+                f"right inliers={diagnostics.get('right_inlier_count')}/{diagnostics.get('right_support_count')}, "
+                f"median residual L/R={left_residual}/{right_residual} mm"
+            )
+            self.log(f"Now click {REQUIRED_CALIBRATION_POINTS} matching points on the camera image.")
         else:
             self.set_state("SELECTING_LIDAR")
 
     def on_image_clicked(self, x, y):
         if self.state not in ["SELECTING_IMAGE", "SNAPSHOT_CAPTURED"]:
             return
-        if len(self.lidar_selected) < 2:
-            self.log("Select 2 LiDAR points before selecting image points")
+        if len(self.lidar_selected) < REQUIRED_CALIBRATION_POINTS:
+            self.log(f"Select {REQUIRED_CALIBRATION_POINTS} LiDAR points before selecting image points")
             return
-        if len(self.image_selected) >= 2:
+        if len(self.image_selected) >= REQUIRED_CALIBRATION_POINTS:
             return
 
         self.image_selected.append((x, y))
         self.log(f"Image P{len(self.image_selected)}: ({x}, {y})")
         self._refresh_image_selection()
 
-        if len(self.image_selected) == 2:
+        if len(self.image_selected) == REQUIRED_CALIBRATION_POINTS:
             self.prepare_preview()
 
     def _refresh_image_selection(self):
         if self.snapshot_color is None:
             return
         image = self.snapshot_color.copy()
-        colors = [(0, 255, 0), (0, 0, 255)]
+        colors = [(0, 255, 0), (0, 220, 255), (0, 0, 255)]
+        for idx in range(len(self.image_selected) - 1):
+            cv2.line(image, self.image_selected[idx], self.image_selected[idx + 1], (255, 255, 0), 2)
         for idx, point in enumerate(self.image_selected):
-            cv2.circle(image, point, 6, colors[idx], -1)
+            color = colors[idx % len(colors)]
+            cv2.circle(image, point, 6, color, -1)
             cv2.putText(image, f"P{idx + 1}", (point[0] + 8, point[1] - 8),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, colors[idx], 2)
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
         self.camera_view.set_image(image)
 
     def prepare_preview(self):
-        if len(self.image_selected) != 2 or len(self.lidar_selected) != 2:
+        if (
+            len(self.image_selected) != REQUIRED_CALIBRATION_POINTS
+            or len(self.lidar_selected) != REQUIRED_CALIBRATION_POINTS
+        ):
             return
 
-        self.mapped_points = map_lidar_to_image(self.bar_points, self.image_selected[0], self.image_selected[1])
-        if not self.mapped_points:
-            self.log("Mapping failed. Ensure image P1 is left of P2, then reset selection.")
+        try:
+            self.correspondences = build_correspondences(self.lidar_selected, self.image_selected)
+        except ValueError as exc:
+            self.log(f"Cannot prepare sample: {exc}")
             return
 
         self.preview_img = render_pair_preview(
             self.snapshot_color,
-            self.mapped_points,
-            self.image_selected[0],
-            self.image_selected[1],
+            self.correspondences,
         )
         self.camera_view.set_image(self.preview_img)
         self.set_state("PREVIEW_READY")
-        self.log(f"Preview ready. Mapped points: {len(self.mapped_points)}")
+        self.log(f"Preview ready. Direct correspondences: {len(self.correspondences)}")
 
     def reset_selection(self):
         self.lidar_selected = []
+        self.lidar_raw_clicks = []
+        self.lidar_feature_extraction = None
         self.image_selected = []
-        self.bar_points = []
-        self.mapped_points = []
+        self.correspondences = []
         self.preview_img = None
-        self.lidar_view.set_selected([])
+        self.lidar_view.set_manual_clicks([])
+        self.lidar_view.set_feature_overlay([], [], [], [])
         if self.snapshot_color is not None:
             self.camera_view.set_image(self.snapshot_color)
             self.set_state("SNAPSHOT_CAPTURED")
@@ -1033,14 +1572,19 @@ class SensorFusionUI(QMainWindow):
             "depth_width": DEPTH_WIDTH,
             "depth_height": DEPTH_HEIGHT,
             "fps": CAMERA_FPS,
+            "camera_lidar_vertical_offset_mm": 80,
+            "camera_lidar_forward_offset_mm": 20,
+            "lidar_snapshot_source": "captured_display_smoothed_scan",
+            "realtime_preview_method": "short_window_median_angle_binning_for_display_and_fitting",
+            "realtime_preview_smooth_scans": DISPLAY_SMOOTH_SCAN_COUNT,
+            "realtime_preview_angle_bin_deg": DISPLAY_SMOOTH_ANGLE_BIN_DEG,
         }
         calibration_data = build_calibration_data(
             timestamp,
-            self.bar_points,
-            self.mapped_points,
-            self.image_selected[0],
-            self.image_selected[1],
+            self.correspondences,
             project_config,
+            manual_lidar_clicks=self.lidar_raw_clicks,
+            lidar_feature_extraction=self.lidar_feature_extraction,
         )
         paths = save_sample(
             OUTPUT_DIR,
@@ -1064,14 +1608,15 @@ class SensorFusionUI(QMainWindow):
         self.snapshot_color = None
         self.snapshot_depth = None
         self.snapshot_lidar = []
+        self.lidar_raw_clicks = []
         self.lidar_selected = []
+        self.lidar_feature_extraction = None
         self.image_selected = []
-        self.bar_points = []
-        self.mapped_points = []
+        self.correspondences = []
         self.preview_img = None
-        self.lidar_view.set_selected([])
+        self.lidar_view.set_manual_clicks([])
+        self.lidar_view.set_feature_overlay([], [], [], [])
         self.set_state("STREAMING" if self.camera_worker or self.lidar_worker else "IDLE")
-
     def run_script(self, script_name):
         if self.process is not None:
             self.log("Another process is already running")
@@ -1088,6 +1633,10 @@ class SensorFusionUI(QMainWindow):
         self.process.readyReadStandardOutput.connect(self.on_process_output)
         self.process.readyReadStandardError.connect(self.on_process_output)
         self.process.finished.connect(self.on_process_finished)
+        self.process_script_name = script_name
+        if script_name == "compute_calibration.py":
+            self.compute_log.clear()
+            self.set_compute_status("RUNNING", "#2563eb")
         self.process.start()
         self.log(f"Started {script_name}")
 
@@ -1103,8 +1652,12 @@ class SensorFusionUI(QMainWindow):
             self.log(text.rstrip())
 
     def on_process_finished(self):
+        finished_script = self.process_script_name
         self.log("Process finished")
         self.process = None
+        self.process_script_name = None
+        if finished_script == "compute_calibration.py":
+            self.refresh_compute_results()
 
     def data_display_name(self, path):
         name = Path(path).name
@@ -1432,6 +1985,7 @@ class SensorFusionUI(QMainWindow):
         if self.process is not None:
             self.process.kill()
             self.process = None
+            self.process_script_name = None
         event.accept()
 
 

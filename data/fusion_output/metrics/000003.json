@@ -1,0 +1,30 @@
+{
+  "frame_id": "000003",
+  "sequence_index": 3,
+  "timestamp": 1782486280170,
+  "timestamp_iso": "2026-06-26 22:04:40",
+  "calibration_file": "F:\\M\u00f4n H\u1ecdc\\K\u00ec 6\\\u0110\u1ed3 \u00c1n 1\\sensorfusion\\calibration_result_pnp.npz",
+  "lidar_port": "COM3",
+  "metrics": {
+    "raw_lidar_points": 140,
+    "front_lidar_points": 140,
+    "projected_points": 48,
+    "valid_depth_pairs": 24,
+    "depth_error_mm": {
+      "mean": 440.65933289460935,
+      "median": 428.5963876498245,
+      "max": 576.6369049513474,
+      "std": 73.81462444126896
+    },
+    "raw_scan_points": 142,
+    "filtered_scan_points": 88,
+    "fusion_denoise_scans": 5
+  },
+  "files": {
+    "rgb": "data\\fusion_output\\rgb\\000003.png",
+    "depth_dense": "data\\fusion_output\\depth_dense\\000003.png",
+    "depth_sparse": "data\\fusion_output\\depth_sparse\\000003.png",
+    "fusion": "data\\fusion_output\\fusion\\000003.png",
+    "metrics": "data\\fusion_output\\metrics\\000003.json"
+  }
+}

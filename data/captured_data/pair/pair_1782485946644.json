@@ -1,0 +1,399 @@
+{
+  "timestamp": 1782485946644,
+  "timestamp_iso": "2026-06-26 21:59:06",
+  "source_script": "app_pyqt.py",
+  "data_version": "corner_feature_correspondence_v2",
+  "calibration_method": "guided_v_shape_lidar_tls_features",
+  "hardware": {
+    "lidar_model": "RPLidar A1M8",
+    "lidar_port": "COM3",
+    "camera_model": "Intel RealSense D435",
+    "camera_lidar_vertical_offset_mm": 80,
+    "camera_lidar_forward_offset_mm": 20
+  },
+  "capture_config": {
+    "color_width": 640,
+    "color_height": 480,
+    "depth_width": 640,
+    "depth_height": 480,
+    "fps": 30,
+    "front_angle_min_deg": -90,
+    "front_angle_max_deg": 90
+  },
+  "target_model": {
+    "type": "corner_target",
+    "point_order": [
+      "left_edge_feature",
+      "corner_intersection_feature",
+      "right_edge_feature"
+    ],
+    "points_per_snapshot": 3
+  },
+  "correspondence_count": 3,
+  "avg_distance_mm": 1943.0312012147697,
+  "lidar_selection_method": "manual_guided_ransac_tls_line_fit",
+  "lidar_snapshot_source": "captured_display_smoothed_scan",
+  "lidar_feature_fit_config": {
+    "distance_threshold_mm": 120.0,
+    "min_points_per_side": 3,
+    "ransac_residual_threshold_mm": 45.0,
+    "ransac_min_inlier_ratio": 0.45
+  },
+  "realtime_preview_method": "short_window_median_angle_binning_for_display_and_fitting",
+  "realtime_preview_smooth_scans": 4,
+  "realtime_preview_angle_bin_deg": 0.5,
+  "manual_lidar_clicks": [
+    {
+      "x_mm": -278.10650887573956,
+      "z_mm": 1972.3502304147464
+    },
+    {
+      "x_mm": -71.00591715976316,
+      "z_mm": 1861.7511520737326
+    },
+    {
+      "x_mm": 124.26035502958621,
+      "z_mm": 2000.0
+    }
+  ],
+  "lidar_feature_extraction": {
+    "method": "guided_v_shape_ransac_tls_fit",
+    "threshold_mm": 120.0,
+    "min_points_per_side": 3,
+    "ransac_residual_threshold_mm": 45.0,
+    "ransac_min_inlier_ratio": 0.45,
+    "input_scan_points": 255,
+    "left_support_count": 14,
+    "right_support_count": 14,
+    "left_inlier_count": 14,
+    "right_inlier_count": 14,
+    "left_line_fit": {
+      "support_count": 14,
+      "inlier_count": 14,
+      "outlier_count": 0,
+      "inlier_ratio": 1.0,
+      "residual_threshold_mm": 45.0,
+      "residuals": {
+        "mean_mm": 4.4277835487869135,
+        "median_mm": 4.11381067260778,
+        "max_mm": 15.381079794456689,
+        "std_mm": 3.5592566749333967
+      }
+    },
+    "right_line_fit": {
+      "support_count": 14,
+      "inlier_count": 14,
+      "outlier_count": 0,
+      "inlier_ratio": 1.0,
+      "residual_threshold_mm": 45.0,
+      "residuals": {
+        "mean_mm": 4.822010317305351,
+        "median_mm": 3.731538988993158,
+        "max_mm": 16.95014067099585,
+        "std_mm": 4.025561940910599
+      }
+    },
+    "left_support_points": [
+      {
+        "x_mm": -275.1452205980494,
+        "z_mm": 1957.7599719020845
+      },
+      {
+        "x_mm": -256.45133616434634,
+        "z_mm": 1947.9412913841938
+      },
+      {
+        "x_mm": -237.88895832684787,
+        "z_mm": 1937.4500880038604
+      },
+      {
+        "x_mm": -219.58593390629707,
+        "z_mm": 1927.2810070486605
+      },
+      {
+        "x_mm": -201.84446256983884,
+        "z_mm": 1920.4217799561357
+      },
+      {
+        "x_mm": -183.6524425478142,
+        "z_mm": 1907.3035405963105
+      },
+      {
+        "x_mm": -165.8573784487935,
+        "z_mm": 1895.7585104685918
+      },
+      {
+        "x_mm": -148.89574891751775,
+        "z_mm": 1891.8998700920436
+      },
+      {
+        "x_mm": -131.53455080376628,
+        "z_mm": 1881.031712271181
+      },
+      {
+        "x_mm": -114.5270601673915,
+        "z_mm": 1872.5008818394224
+      },
+      {
+        "x_mm": -97.58039041496878,
+        "z_mm": 1861.944767549903
+      },
+      {
+        "x_mm": -81.1102508058423,
+        "z_mm": 1857.7301680314645
+      },
+      {
+        "x_mm": -64.96977554879336,
+        "z_mm": 1860.4909483494241
+      },
+      {
+        "x_mm": -48.81346435710646,
+        "z_mm": 1864.1109967481705
+      }
+    ],
+    "right_support_points": [
+      {
+        "x_mm": -97.58039041496878,
+        "z_mm": 1861.944767549903
+      },
+      {
+        "x_mm": -81.1102508058423,
+        "z_mm": 1857.7301680314645
+      },
+      {
+        "x_mm": -64.96977554879336,
+        "z_mm": 1860.4909483494241
+      },
+      {
+        "x_mm": -48.81346435710646,
+        "z_mm": 1864.1109967481705
+      },
+      {
+        "x_mm": -32.67090485059473,
+        "z_mm": 1871.7148853327644
+      },
+      {
+        "x_mm": -16.484425556428363,
+        "z_mm": 1888.9280726682196
+      },
+      {
+        "x_mm": 0.0,
+        "z_mm": 1898.125
+      },
+      {
+        "x_mm": 16.69604404226393,
+        "z_mm": 1913.1771493025258
+      },
+      {
+        "x_mm": 33.53043586763095,
+        "z_mm": 1920.9573843192168
+      },
+      {
+        "x_mm": 50.550959301041544,
+        "z_mm": 1930.463251693423
+      },
+      {
+        "x_mm": 68.03656882152563,
+        "z_mm": 1948.312417273727
+      },
+      {
+        "x_mm": 85.55942831710657,
+        "z_mm": 1959.6330866328142
+      },
+      {
+        "x_mm": 103.4812694813607,
+        "z_mm": 1974.5402475934811
+      },
+      {
+        "x_mm": 121.33397232552804,
+        "z_mm": 1983.7929118634604
+      }
+    ],
+    "left_inlier_points": [
+      {
+        "x_mm": -275.1452205980494,
+        "z_mm": 1957.7599719020845
+      },
+      {
+        "x_mm": -256.45133616434634,
+        "z_mm": 1947.9412913841938
+      },
+      {
+        "x_mm": -237.88895832684787,
+        "z_mm": 1937.4500880038604
+      },
+      {
+        "x_mm": -219.58593390629707,
+        "z_mm": 1927.2810070486605
+      },
+      {
+        "x_mm": -201.84446256983884,
+        "z_mm": 1920.4217799561357
+      },
+      {
+        "x_mm": -183.6524425478142,
+        "z_mm": 1907.3035405963105
+      },
+      {
+        "x_mm": -165.8573784487935,
+        "z_mm": 1895.7585104685918
+      },
+      {
+        "x_mm": -148.89574891751775,
+        "z_mm": 1891.8998700920436
+      },
+      {
+        "x_mm": -131.53455080376628,
+        "z_mm": 1881.031712271181
+      },
+      {
+        "x_mm": -114.5270601673915,
+        "z_mm": 1872.5008818394224
+      },
+      {
+        "x_mm": -97.58039041496878,
+        "z_mm": 1861.944767549903
+      },
+      {
+        "x_mm": -81.1102508058423,
+        "z_mm": 1857.7301680314645
+      },
+      {
+        "x_mm": -64.96977554879336,
+        "z_mm": 1860.4909483494241
+      },
+      {
+        "x_mm": -48.81346435710646,
+        "z_mm": 1864.1109967481705
+      }
+    ],
+    "right_inlier_points": [
+      {
+        "x_mm": -97.58039041496878,
+        "z_mm": 1861.944767549903
+      },
+      {
+        "x_mm": -81.1102508058423,
+        "z_mm": 1857.7301680314645
+      },
+      {
+        "x_mm": -64.96977554879336,
+        "z_mm": 1860.4909483494241
+      },
+      {
+        "x_mm": -48.81346435710646,
+        "z_mm": 1864.1109967481705
+      },
+      {
+        "x_mm": -32.67090485059473,
+        "z_mm": 1871.7148853327644
+      },
+      {
+        "x_mm": -16.484425556428363,
+        "z_mm": 1888.9280726682196
+      },
+      {
+        "x_mm": 0.0,
+        "z_mm": 1898.125
+      },
+      {
+        "x_mm": 16.69604404226393,
+        "z_mm": 1913.1771493025258
+      },
+      {
+        "x_mm": 33.53043586763095,
+        "z_mm": 1920.9573843192168
+      },
+      {
+        "x_mm": 50.550959301041544,
+        "z_mm": 1930.463251693423
+      },
+      {
+        "x_mm": 68.03656882152563,
+        "z_mm": 1948.312417273727
+      },
+      {
+        "x_mm": 85.55942831710657,
+        "z_mm": 1959.6330866328142
+      },
+      {
+        "x_mm": 103.4812694813607,
+        "z_mm": 1974.5402475934811
+      },
+      {
+        "x_mm": 121.33397232552804,
+        "z_mm": 1983.7929118634604
+      }
+    ],
+    "left_line": {
+      "start": {
+        "x_mm": -276.89561379494376,
+        "z_mm": 1954.0253651615174
+      },
+      "end": {
+        "x_mm": -55.3410928297335,
+        "z_mm": 1850.1837686619074
+      }
+    },
+    "right_line": {
+      "start": {
+        "x_mm": -88.54650899285812,
+        "z_mm": 1847.602652809817
+      },
+      "end": {
+        "x_mm": 123.1331860945347,
+        "z_mm": 1980.9364951017926
+      }
+    }
+  },
+  "correspondences": [
+    {
+      "id": 1,
+      "lidar": {
+        "angle_deg": -8.280496799974065,
+        "distance_mm": 1978.416421913257,
+        "x_mm": -284.93027275111285,
+        "y_mm": 0.0,
+        "z_mm": 1957.7911732782,
+        "source": "manual_click_projected_to_left_ransac_tls_line"
+      },
+      "image": {
+        "u": 250,
+        "v": 225
+      },
+      "role": "left_edge_feature"
+    },
+    {
+      "id": 2,
+      "lidar": {
+        "angle_deg": -2.220105148503149,
+        "distance_mm": 1859.4016364525262,
+        "x_mm": -72.03033567162086,
+        "y_mm": 0.0,
+        "z_mm": 1858.005940890762,
+        "source": "intersection_of_left_and_right_ransac_tls_lines"
+      },
+      "image": {
+        "u": 321,
+        "v": 225
+      },
+      "role": "corner_intersection_feature"
+    },
+    {
+      "id": 3,
+      "lidar": {
+        "angle_deg": 3.8163655187798393,
+        "distance_mm": 1991.2755452785261,
+        "x_mm": 132.53711368941177,
+        "y_mm": 0.0,
+        "z_mm": 1986.8598870376268,
+        "source": "manual_click_projected_to_right_ransac_tls_line"
+      },
+      "image": {
+        "u": 389,
+        "v": 228
+      },
+      "role": "right_edge_feature"
+    }
+  ]
+}

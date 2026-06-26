@@ -1,0 +1,359 @@
+{
+  "timestamp": 1782486091725,
+  "timestamp_iso": "2026-06-26 22:01:31",
+  "source_script": "app_pyqt.py",
+  "data_version": "corner_feature_correspondence_v2",
+  "calibration_method": "guided_v_shape_lidar_tls_features",
+  "hardware": {
+    "lidar_model": "RPLidar A1M8",
+    "lidar_port": "COM3",
+    "camera_model": "Intel RealSense D435",
+    "camera_lidar_vertical_offset_mm": 80,
+    "camera_lidar_forward_offset_mm": 20
+  },
+  "capture_config": {
+    "color_width": 640,
+    "color_height": 480,
+    "depth_width": 640,
+    "depth_height": 480,
+    "fps": 30,
+    "front_angle_min_deg": -90,
+    "front_angle_max_deg": 90
+  },
+  "target_model": {
+    "type": "corner_target",
+    "point_order": [
+      "left_edge_feature",
+      "corner_intersection_feature",
+      "right_edge_feature"
+    ],
+    "points_per_snapshot": 3
+  },
+  "correspondence_count": 3,
+  "avg_distance_mm": 2002.5440681055186,
+  "lidar_selection_method": "manual_guided_ransac_tls_line_fit",
+  "lidar_snapshot_source": "captured_display_smoothed_scan",
+  "lidar_feature_fit_config": {
+    "distance_threshold_mm": 120.0,
+    "min_points_per_side": 3,
+    "ransac_residual_threshold_mm": 45.0,
+    "ransac_min_inlier_ratio": 0.45
+  },
+  "realtime_preview_method": "short_window_median_angle_binning_for_display_and_fitting",
+  "realtime_preview_smooth_scans": 4,
+  "realtime_preview_angle_bin_deg": 0.5,
+  "manual_lidar_clicks": [
+    {
+      "x_mm": -816.5680473372781,
+      "z_mm": 1907.8341013824884
+    },
+    {
+      "x_mm": -633.1360946745563,
+      "z_mm": 1815.668202764977
+    },
+    {
+      "x_mm": -431.95266272189383,
+      "z_mm": 1972.3502304147464
+    }
+  ],
+  "lidar_feature_extraction": {
+    "method": "guided_v_shape_ransac_tls_fit",
+    "threshold_mm": 120.0,
+    "min_points_per_side": 3,
+    "ransac_residual_threshold_mm": 45.0,
+    "ransac_min_inlier_ratio": 0.45,
+    "input_scan_points": 238,
+    "left_support_count": 8,
+    "right_support_count": 15,
+    "left_inlier_count": 8,
+    "right_inlier_count": 15,
+    "left_line_fit": {
+      "support_count": 8,
+      "inlier_count": 8,
+      "outlier_count": 0,
+      "inlier_ratio": 1.0,
+      "residual_threshold_mm": 45.0,
+      "residuals": {
+        "mean_mm": 3.5832392624050575,
+        "median_mm": 2.497449436421939,
+        "max_mm": 8.877432060745921,
+        "std_mm": 2.327921450429615
+      }
+    },
+    "right_line_fit": {
+      "support_count": 15,
+      "inlier_count": 15,
+      "outlier_count": 0,
+      "inlier_ratio": 1.0,
+      "residual_threshold_mm": 45.0,
+      "residuals": {
+        "mean_mm": 10.752317212769299,
+        "median_mm": 9.75957749676838,
+        "max_mm": 37.10767167695222,
+        "std_mm": 8.32231052253261
+      }
+    },
+    "left_support_points": [
+      {
+        "x_mm": -810.9136157884266,
+        "z_mm": 1910.3927602338586
+      },
+      {
+        "x_mm": -784.7402134936623,
+        "z_mm": 1894.5304663559573
+      },
+      {
+        "x_mm": -734.1935824354485,
+        "z_mm": 1863.8589930599908
+      },
+      {
+        "x_mm": -712.704259658216,
+        "z_mm": 1856.65807319631
+      },
+      {
+        "x_mm": -668.2218550225252,
+        "z_mm": 1835.9244578604687
+      },
+      {
+        "x_mm": -646.5838863358142,
+        "z_mm": 1825.8965682455496
+      },
+      {
+        "x_mm": -625.0094645191266,
+        "z_mm": 1815.1592855067886
+      },
+      {
+        "x_mm": -609.0662879695743,
+        "z_mm": 1820.3072561682995
+      }
+    ],
+    "right_support_points": [
+      {
+        "x_mm": -668.2218550225252,
+        "z_mm": 1835.9244578604687
+      },
+      {
+        "x_mm": -646.5838863358142,
+        "z_mm": 1825.8965682455496
+      },
+      {
+        "x_mm": -625.0094645191266,
+        "z_mm": 1815.1592855067886
+      },
+      {
+        "x_mm": -609.0662879695743,
+        "z_mm": 1820.3072561682995
+      },
+      {
+        "x_mm": -593.1581207027115,
+        "z_mm": 1825.5529830285473
+      },
+      {
+        "x_mm": -579.1969580701681,
+        "z_mm": 1836.9780617599286
+      },
+      {
+        "x_mm": -565.0083193766889,
+        "z_mm": 1848.0589408985659
+      },
+      {
+        "x_mm": -550.2797303638501,
+        "z_mm": 1857.7132363071241
+      },
+      {
+        "x_mm": -536.9760238009915,
+        "z_mm": 1872.6579413998375
+      },
+      {
+        "x_mm": -523.8874315044128,
+        "z_mm": 1889.0770497088542
+      },
+      {
+        "x_mm": -494.37531800549465,
+        "z_mm": 1911.6075159265738
+      },
+      {
+        "x_mm": -480.8197675043396,
+        "z_mm": 1928.462755973543
+      },
+      {
+        "x_mm": -467.0658117347027,
+        "z_mm": 1945.4691182356514
+      },
+      {
+        "x_mm": -450.32389191462477,
+        "z_mm": 1950.5670734419427
+      },
+      {
+        "x_mm": -435.2059537260404,
+        "z_mm": 1963.087196316406
+      }
+    ],
+    "left_inlier_points": [
+      {
+        "x_mm": -810.9136157884266,
+        "z_mm": 1910.3927602338586
+      },
+      {
+        "x_mm": -784.7402134936623,
+        "z_mm": 1894.5304663559573
+      },
+      {
+        "x_mm": -734.1935824354485,
+        "z_mm": 1863.8589930599908
+      },
+      {
+        "x_mm": -712.704259658216,
+        "z_mm": 1856.65807319631
+      },
+      {
+        "x_mm": -668.2218550225252,
+        "z_mm": 1835.9244578604687
+      },
+      {
+        "x_mm": -646.5838863358142,
+        "z_mm": 1825.8965682455496
+      },
+      {
+        "x_mm": -625.0094645191266,
+        "z_mm": 1815.1592855067886
+      },
+      {
+        "x_mm": -609.0662879695743,
+        "z_mm": 1820.3072561682995
+      }
+    ],
+    "right_inlier_points": [
+      {
+        "x_mm": -668.2218550225252,
+        "z_mm": 1835.9244578604687
+      },
+      {
+        "x_mm": -646.5838863358142,
+        "z_mm": 1825.8965682455496
+      },
+      {
+        "x_mm": -625.0094645191266,
+        "z_mm": 1815.1592855067886
+      },
+      {
+        "x_mm": -609.0662879695743,
+        "z_mm": 1820.3072561682995
+      },
+      {
+        "x_mm": -593.1581207027115,
+        "z_mm": 1825.5529830285473
+      },
+      {
+        "x_mm": -579.1969580701681,
+        "z_mm": 1836.9780617599286
+      },
+      {
+        "x_mm": -565.0083193766889,
+        "z_mm": 1848.0589408985659
+      },
+      {
+        "x_mm": -550.2797303638501,
+        "z_mm": 1857.7132363071241
+      },
+      {
+        "x_mm": -536.9760238009915,
+        "z_mm": 1872.6579413998375
+      },
+      {
+        "x_mm": -523.8874315044128,
+        "z_mm": 1889.0770497088542
+      },
+      {
+        "x_mm": -494.37531800549465,
+        "z_mm": 1911.6075159265738
+      },
+      {
+        "x_mm": -480.8197675043396,
+        "z_mm": 1928.462755973543
+      },
+      {
+        "x_mm": -467.0658117347027,
+        "z_mm": 1945.4691182356514
+      },
+      {
+        "x_mm": -450.32389191462477,
+        "z_mm": 1950.5670734419427
+      },
+      {
+        "x_mm": -435.2059537260404,
+        "z_mm": 1963.087196316406
+      }
+    ],
+    "left_line": {
+      "start": {
+        "x_mm": -812.7566728557291,
+        "z_mm": 1906.481729124624
+      },
+      "end": {
+        "x_mm": -612.8505949757227,
+        "z_mm": 1812.2768252660144
+      }
+    },
+    "right_line": {
+      "start": {
+        "x_mm": -646.8267431331243,
+        "z_mm": 1805.6056768077203
+      },
+      "end": {
+        "x_mm": -431.3681809673108,
+        "z_mm": 1957.6487301563031
+      }
+    }
+  },
+  "correspondences": [
+    {
+      "id": 1,
+      "lidar": {
+        "angle_deg": -23.163020376396705,
+        "distance_mm": 2075.5048755583357,
+        "x_mm": -816.3969428111734,
+        "y_mm": 0.0,
+        "z_mm": 1908.1971911296255,
+        "source": "manual_click_projected_to_left_ransac_tls_line"
+      },
+      "image": {
+        "u": 70,
+        "v": 230
+      },
+      "role": "left_edge_feature"
+    },
+    {
+      "id": 2,
+      "lidar": {
+        "angle_deg": -19.032411750066892,
+        "distance_mm": 1924.4048379794995,
+        "x_mm": -627.5541416128963,
+        "y_mm": 0.0,
+        "z_mm": 1819.2058101774535,
+        "source": "intersection_of_left_and_right_ransac_tls_lines"
+      },
+      "image": {
+        "u": 132,
+        "v": 228
+      },
+      "role": "corner_intersection_feature"
+    },
+    {
+      "id": 3,
+      "lidar": {
+        "angle_deg": -12.21609293187871,
+        "distance_mm": 2007.7224907787202,
+        "x_mm": -424.8327127150435,
+        "y_mm": 0.0,
+        "z_mm": 1962.260626467821,
+        "source": "manual_click_projected_to_right_ransac_tls_line"
+      },
+      "image": {
+        "u": 213,
+        "v": 230
+      },
+      "role": "right_edge_feature"
+    }
+  ]
+}
